@@ -102,8 +102,8 @@ def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     resp = no_raise_client.post("/api/chat", json={"text": "trigger a crash"})
     assert resp.status_code == 500
     body = resp.json()
-    assert "error" in body
-    assert "boom" in body["error"]
+    assert body == {"error": "internal server error"}
+    assert "boom" not in body["error"]  # exception detail must not reach the client
 
 
 def test_teach_confirm_writes(client, monkeypatch):

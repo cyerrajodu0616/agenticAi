@@ -6,6 +6,7 @@ auth is added because of that binding. Writes are two-step: a proposal
 endpoint (read-only) followed by a confirm endpoint that takes the exact
 data the browser displayed, never just an id to "re-derive" from.
 """
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from assistant.db.client import init_schema
 from assistant.kb import kb_delete, kb_find, kb_learn, kb_list_recent, kb_update
 from assistant.redact import redact
 from assistant.tasks import get_escalation
+
+_log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -40,7 +43,8 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONR
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(status_code=500, content={"error": str(exc)})
+    _log.exception("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"error": "internal server error"})
 
 
 class ChatRequest(BaseModel):
