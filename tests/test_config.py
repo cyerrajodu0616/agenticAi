@@ -3,7 +3,7 @@ import pytest
 
 
 def _reload_config(monkeypatch, **env):
-    for k in ("MODEL_BACKEND", "EMBED_DIM", "GROQ_API_KEY", "GOOGLE_API_KEY"):
+    for k in ("MODEL_BACKEND", "EMBED_DIM", "GROQ_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)

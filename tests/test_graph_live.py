@@ -3,10 +3,12 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+REF = "pytest:graph-live"
 
-def test_pdf_question_end_to_end():
-    from assistant.db.client import init_schema
-    from assistant.graph import build_graph
+
+@pytest.fixture()
+def seeded_kb():
+    from assistant.db.client import get_connection, init_schema
     from assistant.kb import kb_learn
 
     init_schema()
@@ -14,8 +16,16 @@ def test_pdf_question_end_to_end():
         question="Where is the eConsent HIPAA PDF for an application?",
         answer="Query consentDetails for the arcId; the S3 key pattern is in runbook X.",
         created_by="pytest-live",
-        source_refs=[],
+        source_refs=[REF],
     )
+    yield
+    with get_connection() as conn:
+        conn.execute("DELETE FROM agent_knowledge WHERE %s = ANY(source_refs)", (REF,))
+
+
+def test_pdf_question_end_to_end(seeded_kb):
+    from assistant.graph import build_graph
+
     out = build_graph().invoke(
         {
             "raw_text": "Hi! Where can I find the signed eConsent PDF for ARCF25344h646?",
@@ -28,18 +38,9 @@ def test_pdf_question_end_to_end():
     assert out.get("review_item_id"), "expected a pending reply draft in review_items"
 
 
-def test_unrelated_question_escalates_on_low_similarity():
-    from assistant.db.client import init_schema
+def test_unrelated_question_escalates_on_low_similarity(seeded_kb):
     from assistant.graph import build_graph
-    from assistant.kb import kb_learn
 
-    init_schema()
-    kb_learn(
-        question="Where is the eConsent HIPAA PDF for an application?",
-        answer="Query consentDetails for the arcId; the S3 key pattern is in runbook X.",
-        created_by="pytest-live",
-        source_refs=[],
-    )
     out = build_graph().invoke(
         {
             "raw_text": "What is the wifi password for the 3rd floor conference room?",

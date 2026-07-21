@@ -24,24 +24,11 @@ def get_model(role: str):
     return init_chat_model(table[role], temperature=0)
 
 
-class _CloudEmbeddings:
-    """gemini-embedding-001 truncated to EMBED_DIM (this account lacks text-embedding-004)."""
-
-    def __init__(self):
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-        self._inner = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._inner.embed_query(text, output_dimensionality=config.EMBED_DIM)
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._inner.embed_documents(texts, output_dimensionality=config.EMBED_DIM)
-
-
 def get_embeddings():
     if config.MODEL_BACKEND == "cloud":
-        return _CloudEmbeddings()
+        from langchain_openai import OpenAIEmbeddings
+
+        return OpenAIEmbeddings(model="text-embedding-3-small", dimensions=config.EMBED_DIM)
     from langchain_ollama import OllamaEmbeddings
 
     return OllamaEmbeddings(model="nomic-embed-text", base_url=config.OLLAMA_BASE_URL)
@@ -55,5 +42,5 @@ def embedding_model_name() -> str:
     reembed needs to know which rows were embedded with what).
     """
     if config.MODEL_BACKEND == "cloud":
-        return f"gemini-embedding-001@{config.EMBED_DIM}"
+        return f"text-embedding-3-small@{config.EMBED_DIM}"
     return "nomic-embed-text"
