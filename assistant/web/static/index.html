@@ -1,3 +1,280 @@
 <!doctype html>
-<html><head><title>assistant</title></head>
-<body><p>placeholder — replaced in a later task</p></body></html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>assistant</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+  nav button { padding: 0.5rem 1rem; margin-right: 0.5rem; cursor: pointer; }
+  nav button.active { font-weight: bold; text-decoration: underline; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .msg { margin: 0.5rem 0; padding: 0.5rem; border-radius: 6px; }
+  .msg.user { background: #e8f0fe; text-align: right; }
+  .msg.bot { background: #f1f1f1; }
+  .proposal { border: 1px solid #ccc; padding: 0.75rem; margin: 0.5rem 0; border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  td, th { border: 1px solid #ddd; padding: 0.4rem; text-align: left; vertical-align: top; }
+  textarea, input[type=text] { width: 100%; box-sizing: border-box; }
+  .error { color: #b00020; }
+  .row-actions button { margin-right: 0.25rem; }
+</style>
+</head>
+<body>
+<h1>assistant</h1>
+<nav>
+  <button id="tab-btn-chat" class="active" onclick="showTab('chat')">Chat</button>
+  <button id="tab-btn-kb" onclick="showTab('kb')">Knowledge Base</button>
+  <button id="tab-btn-tasks" onclick="showTab('tasks')">Tasks</button>
+</nav>
+
+<section id="tab-chat" class="tab active">
+  <div id="chat-log"></div>
+  <input type="text" id="chat-input" placeholder="Ask, teach, or correct..." style="width:80%">
+  <button onclick="sendChat()">Send</button>
+</section>
+
+<section id="tab-kb" class="tab">
+  <input type="text" id="kb-search" placeholder="Search knowledge base...">
+  <button onclick="loadKb()">Search</button>
+  <button onclick="document.getElementById('kb-search').value='';loadKb()">Show recent</button>
+  <table id="kb-table"><thead><tr><th>Question</th><th>Answer</th><th></th></tr></thead><tbody></tbody></table>
+</section>
+
+<section id="tab-tasks" class="tab">
+  <h3>Escalations</h3>
+  <div id="escalations-list"></div>
+  <h3>Drafts</h3>
+  <div id="drafts-list"></div>
+</section>
+
+<script>
+function showTab(name) {
+  for (const t of ['chat', 'kb', 'tasks']) {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
+  }
+  if (name === 'kb') loadKb();
+  if (name === 'tasks') loadTasks();
+}
+
+async function api(method, path, body) {
+  const resp = await fetch(path, {
+    method,
+    headers: body ? {'Content-Type': 'application/json'} : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.detail || data.error || ('HTTP ' + resp.status));
+  return data;
+}
+
+function logMsg(who, html) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + who;
+  div.innerHTML = html;
+  document.getElementById('chat-log').appendChild(div);
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  logMsg('user', text);
+  input.value = '';
+  try {
+    const data = await api('POST', '/api/chat', {text});
+    if (data.action === 'ask') {
+      logMsg('bot', data.answer);
+    } else if (data.action === 'teach') {
+      const id = 'proposal-' + Date.now();
+      logMsg('bot', `<div class="proposal" id="${id}">
+        <div>Proposed: <b>Q:</b> ${data.question}<br><b>A:</b> ${data.answer}</div>
+        <button onclick="confirmTeach('${id}', ${JSON.stringify(data.question)}, ${JSON.stringify(data.answer)})">Save</button>
+        <button onclick="document.getElementById('${id}').remove()">Discard</button>
+      </div>`);
+    } else if (data.action === 'edit_kb' || data.action === 'delete_kb') {
+      if (!data.matches.length) { logMsg('bot', 'No matching knowledge entries found.'); return; }
+      const id = 'proposal-' + Date.now();
+      let html = `<div class="proposal" id="${id}"><div>Matches:</div>`;
+      for (const m of data.matches) {
+        html += `<div>#${m.id} (sim ${m.similarity.toFixed(2)}) Q: ${m.question}<br>A: ${m.answer}</div>`;
+      }
+      html += `<div>Use the Knowledge Base tab to edit or delete a specific entry.</div></div>`;
+      logMsg('bot', html);
+    } else if (data.action === 'resolve') {
+      if (data.error) { logMsg('bot', '<span class="error">' + data.error + '</span>'); return; }
+      const id = 'proposal-' + Date.now();
+      logMsg('bot', `<div class="proposal" id="${id}">
+        <div>Resolution for escalation #${data.escalation_id} (${data.question}):<br>${data.resolution}</div>
+        <button onclick="confirmResolve('${id}', ${data.escalation_id}, ${JSON.stringify(data.resolution)})">Resolve</button>
+        <button onclick="document.getElementById('${id}').remove()">Discard</button>
+      </div>`);
+    } else {
+      logMsg('bot', data.message || data.answer || JSON.stringify(data));
+    }
+  } catch (e) {
+    logMsg('bot', '<span class="error">' + e.message + '</span>');
+  }
+}
+
+async function confirmTeach(elId, question, answer) {
+  try {
+    await api('POST', '/api/teach/confirm', {question, answer});
+    document.getElementById(elId).outerHTML = 'Learned.';
+  } catch (e) {
+    logMsg('bot', '<span class="error">' + e.message + '</span>');
+  }
+}
+
+async function confirmResolve(elId, escId, resolutionText) {
+  try {
+    await api('POST', `/api/escalation/${escId}/resolve`, {resolution_text: resolutionText});
+    document.getElementById(elId).outerHTML = 'Resolved and learned.';
+  } catch (e) {
+    logMsg('bot', '<span class="error">' + e.message + '</span>');
+  }
+}
+
+document.getElementById('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChat();
+});
+
+async function loadKb() {
+  const q = document.getElementById('kb-search').value.trim();
+  const data = await api('GET', '/api/kb' + (q ? '?q=' + encodeURIComponent(q) : ''));
+  const tbody = document.querySelector('#kb-table tbody');
+  tbody.innerHTML = '';
+  for (const e of data.entries) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td contenteditable id="kb-q-${e.id}">${e.question}</td>
+      <td contenteditable id="kb-a-${e.id}">${e.answer}</td>
+      <td class="row-actions">
+        <button onclick="saveKb(${e.id})">Save</button>
+        <button onclick="deleteKb(${e.id})">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+async function saveKb(id) {
+  const question = document.getElementById('kb-q-' + id).innerText;
+  const answer = document.getElementById('kb-a-' + id).innerText;
+  try {
+    await api('PATCH', '/api/kb/' + id, {question, answer});
+    loadKb();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteKb(id) {
+  if (!confirm('Permanently delete entry #' + id + '?')) return;
+  try {
+    await api('DELETE', '/api/kb/' + id);
+    loadKb();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+let _lastTasksJson = '';
+async function loadTasks() {
+  const data = await api('GET', '/api/tasks');
+  const asJson = JSON.stringify(data);
+  if (asJson === _lastTasksJson) return;
+  _lastTasksJson = asJson;
+
+  const escDiv = document.getElementById('escalations-list');
+  escDiv.innerHTML = data.escalations.length ? '' : '<p>None pending.</p>';
+  for (const e of data.escalations) {
+    const div = document.createElement('div');
+    div.className = 'proposal';
+    div.innerHTML = `
+      <div>#${e.id} from ${e.sender}: ${e.question}</div>
+      <textarea id="resolve-text-${e.id}" placeholder="Your answer..."></textarea>
+      <button onclick="draftResolution(${e.id})">Draft resolution</button>
+      <div id="resolve-draft-${e.id}"></div>`;
+    escDiv.appendChild(div);
+  }
+
+  const draftsDiv = document.getElementById('drafts-list');
+  draftsDiv.innerHTML = data.drafts.length ? '' : '<p>None pending.</p>';
+  for (const d of data.drafts) {
+    const div = document.createElement('div');
+    div.className = 'proposal';
+    div.innerHTML = `
+      <div>#${d.id} for ${d.sender}: ${d.question}</div>
+      <button onclick="viewDraft(${d.id})">View / Edit</button>
+      <button onclick="rejectDraft(${d.id})">Reject</button>
+      <div id="draft-detail-${d.id}"></div>`;
+    draftsDiv.appendChild(div);
+  }
+}
+
+async function viewDraft(id) {
+  const detailDiv = document.getElementById('draft-detail-' + id);
+  if (detailDiv.dataset.loaded) { detailDiv.style.display = detailDiv.style.display === 'none' ? 'block' : 'none'; return; }
+  try {
+    const item = await api('GET', '/api/review/' + id);
+    detailDiv.dataset.loaded = '1';
+    detailDiv.innerHTML = `
+      <textarea id="draft-text-${id}" rows="4">${item.payload.draft}</textarea>
+      <button onclick="approveDraft(${id})">Approve (as edited above)</button>`;
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function approveDraft(id) {
+  const textEl = document.getElementById('draft-text-' + id);
+  const body = textEl ? {edited_text: textEl.value} : {};
+  try {
+    await api('POST', `/api/review/${id}/approve`, body);
+    _lastTasksJson = '';
+    loadTasks();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function draftResolution(escId) {
+  const text = document.getElementById('resolve-text-' + escId).value.trim();
+  if (!text) return;
+  try {
+    const data = await api('POST', `/api/escalation/${escId}/draft-resolution`, {text});
+    document.getElementById('resolve-draft-' + escId).innerHTML = `
+      <div>Draft: ${data.resolution}</div>
+      <button onclick="confirmResolveTask(${escId}, ${JSON.stringify(data.resolution)})">Confirm & Resolve</button>`;
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function confirmResolveTask(escId, resolutionText) {
+  try {
+    await api('POST', `/api/escalation/${escId}/resolve`, {resolution_text: resolutionText});
+    _lastTasksJson = '';
+    loadTasks();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function rejectDraft(id) {
+  try {
+    await api('POST', `/api/review/${id}/reject`, {});
+    _lastTasksJson = '';
+    loadTasks();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+setInterval(() => {
+  if (document.getElementById('tab-tasks').classList.contains('active')) loadTasks();
+}, 10000);
+</script>
+</body>
+</html>
