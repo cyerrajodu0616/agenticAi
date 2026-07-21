@@ -49,6 +49,21 @@
 </section>
 
 <script>
+// Escapes text for safe interpolation into innerHTML. Everything rendered here can
+// originate from an untrusted source (a Teams/email message, a KB entry seeded from
+// an external system like Graphify, or the user's own chat input) — nothing is
+// assumed safe. Never build an onclick="..." attribute from untrusted data either
+// (JSON.stringify's own quote delimiters collide with the surrounding HTML attribute
+// quotes); instead stash the data in _pendingProposals keyed by an id and have the
+// handler look it up.
+function esc(s) {
+  const div = document.createElement('div');
+  div.textContent = s == null ? '' : String(s);
+  return div.innerHTML;
+}
+
+let _pendingProposals = {};
+
 function showTab(name) {
   for (const t of ['chat', 'kb', 'tasks']) {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
@@ -80,59 +95,73 @@ async function sendChat() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text) return;
-  logMsg('user', text);
+  logMsg('user', esc(text));
   input.value = '';
   try {
     const data = await api('POST', '/api/chat', {text});
     if (data.action === 'ask') {
-      logMsg('bot', data.answer);
+      logMsg('bot', esc(data.answer));
     } else if (data.action === 'teach') {
       const id = 'proposal-' + Date.now();
+      _pendingProposals[id] = {question: data.question, answer: data.answer};
       logMsg('bot', `<div class="proposal" id="${id}">
-        <div>Proposed: <b>Q:</b> ${data.question}<br><b>A:</b> ${data.answer}</div>
-        <button onclick="confirmTeach('${id}', ${JSON.stringify(data.question)}, ${JSON.stringify(data.answer)})">Save</button>
-        <button onclick="document.getElementById('${id}').remove()">Discard</button>
+        <div>Proposed: <b>Q:</b> ${esc(data.question)}<br><b>A:</b> ${esc(data.answer)}</div>
+        <button onclick="confirmTeach('${id}')">Save</button>
+        <button onclick="discardProposal('${id}')">Discard</button>
       </div>`);
     } else if (data.action === 'edit_kb' || data.action === 'delete_kb') {
       if (!data.matches.length) { logMsg('bot', 'No matching knowledge entries found.'); return; }
       const id = 'proposal-' + Date.now();
       let html = `<div class="proposal" id="${id}"><div>Matches:</div>`;
       for (const m of data.matches) {
-        html += `<div>#${m.id} (sim ${m.similarity.toFixed(2)}) Q: ${m.question}<br>A: ${m.answer}</div>`;
+        html += `<div>#${m.id} (sim ${m.similarity.toFixed(2)}) Q: ${esc(m.question)}<br>A: ${esc(m.answer)}</div>`;
       }
       html += `<div>Use the Knowledge Base tab to edit or delete a specific entry.</div></div>`;
       logMsg('bot', html);
     } else if (data.action === 'resolve') {
-      if (data.error) { logMsg('bot', '<span class="error">' + data.error + '</span>'); return; }
+      if (data.error) { logMsg('bot', '<span class="error">' + esc(data.error) + '</span>'); return; }
       const id = 'proposal-' + Date.now();
+      _pendingProposals[id] = {escalationId: data.escalation_id, resolution: data.resolution};
       logMsg('bot', `<div class="proposal" id="${id}">
-        <div>Resolution for escalation #${data.escalation_id} (${data.question}):<br>${data.resolution}</div>
-        <button onclick="confirmResolve('${id}', ${data.escalation_id}, ${JSON.stringify(data.resolution)})">Resolve</button>
-        <button onclick="document.getElementById('${id}').remove()">Discard</button>
+        <div>Resolution for escalation #${data.escalation_id} (${esc(data.question)}):<br>${esc(data.resolution)}</div>
+        <button onclick="confirmResolve('${id}')">Resolve</button>
+        <button onclick="discardProposal('${id}')">Discard</button>
       </div>`);
     } else {
-      logMsg('bot', data.message || data.answer || JSON.stringify(data));
+      logMsg('bot', esc(data.message || data.answer || JSON.stringify(data)));
     }
   } catch (e) {
-    logMsg('bot', '<span class="error">' + e.message + '</span>');
+    logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
   }
 }
 
-async function confirmTeach(elId, question, answer) {
+function discardProposal(elId) {
+  delete _pendingProposals[elId];
+  const el = document.getElementById(elId);
+  if (el) el.remove();
+}
+
+async function confirmTeach(elId) {
+  const p = _pendingProposals[elId];
   try {
-    await api('POST', '/api/teach/confirm', {question, answer});
+    await api('POST', '/api/teach/confirm', {question: p.question, answer: p.answer});
     document.getElementById(elId).outerHTML = 'Learned.';
   } catch (e) {
-    logMsg('bot', '<span class="error">' + e.message + '</span>');
+    logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
+  } finally {
+    delete _pendingProposals[elId];
   }
 }
 
-async function confirmResolve(elId, escId, resolutionText) {
+async function confirmResolve(elId) {
+  const p = _pendingProposals[elId];
   try {
-    await api('POST', `/api/escalation/${escId}/resolve`, {resolution_text: resolutionText});
+    await api('POST', `/api/escalation/${p.escalationId}/resolve`, {resolution_text: p.resolution});
     document.getElementById(elId).outerHTML = 'Resolved and learned.';
   } catch (e) {
-    logMsg('bot', '<span class="error">' + e.message + '</span>');
+    logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
+  } finally {
+    delete _pendingProposals[elId];
   }
 }
 
@@ -148,8 +177,8 @@ async function loadKb() {
   for (const e of data.entries) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td contenteditable id="kb-q-${e.id}">${e.question}</td>
-      <td contenteditable id="kb-a-${e.id}">${e.answer}</td>
+      <td contenteditable id="kb-q-${e.id}">${esc(e.question)}</td>
+      <td contenteditable id="kb-a-${e.id}">${esc(e.answer)}</td>
       <td class="row-actions">
         <button onclick="saveKb(${e.id})">Save</button>
         <button onclick="deleteKb(${e.id})">Delete</button>
@@ -192,7 +221,7 @@ async function loadTasks() {
     const div = document.createElement('div');
     div.className = 'proposal';
     div.innerHTML = `
-      <div>#${e.id} from ${e.sender}: ${e.question}</div>
+      <div>#${e.id} from ${esc(e.sender)}: ${esc(e.question)}</div>
       <textarea id="resolve-text-${e.id}" placeholder="Your answer..."></textarea>
       <button onclick="draftResolution(${e.id})">Draft resolution</button>
       <div id="resolve-draft-${e.id}"></div>`;
@@ -205,7 +234,7 @@ async function loadTasks() {
     const div = document.createElement('div');
     div.className = 'proposal';
     div.innerHTML = `
-      <div>#${d.id} for ${d.sender}: ${d.question}</div>
+      <div>#${d.id} for ${esc(d.sender)}: ${esc(d.question)}</div>
       <button onclick="viewDraft(${d.id})">View / Edit</button>
       <button onclick="rejectDraft(${d.id})">Reject</button>
       <div id="draft-detail-${d.id}"></div>`;
@@ -220,7 +249,7 @@ async function viewDraft(id) {
     const item = await api('GET', '/api/review/' + id);
     detailDiv.dataset.loaded = '1';
     detailDiv.innerHTML = `
-      <textarea id="draft-text-${id}" rows="4">${item.payload.draft}</textarea>
+      <textarea id="draft-text-${id}" rows="4">${esc(item.payload.draft)}</textarea>
       <button onclick="approveDraft(${id})">Approve (as edited above)</button>`;
   } catch (e) {
     alert(e.message);
@@ -244,21 +273,25 @@ async function draftResolution(escId) {
   if (!text) return;
   try {
     const data = await api('POST', `/api/escalation/${escId}/draft-resolution`, {text});
+    _pendingProposals['resolve-task-' + escId] = data.resolution;
     document.getElementById('resolve-draft-' + escId).innerHTML = `
-      <div>Draft: ${data.resolution}</div>
-      <button onclick="confirmResolveTask(${escId}, ${JSON.stringify(data.resolution)})">Confirm & Resolve</button>`;
+      <div>Draft: ${esc(data.resolution)}</div>
+      <button onclick="confirmResolveTask(${escId})">Confirm & Resolve</button>`;
   } catch (e) {
     alert(e.message);
   }
 }
 
-async function confirmResolveTask(escId, resolutionText) {
+async function confirmResolveTask(escId) {
+  const resolutionText = _pendingProposals['resolve-task-' + escId];
   try {
     await api('POST', `/api/escalation/${escId}/resolve`, {resolution_text: resolutionText});
     _lastTasksJson = '';
     loadTasks();
   } catch (e) {
     alert(e.message);
+  } finally {
+    delete _pendingProposals['resolve-task-' + escId];
   }
 }
 
