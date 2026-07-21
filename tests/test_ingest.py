@@ -95,6 +95,52 @@ def test_graph_failure_does_not_block_retry(clean, monkeypatch):
     assert result["status"] == "escalated"  # retry succeeded, not falsely "duplicate"
 
 
+def test_concurrent_insert_race_resolves_to_existing_row(clean, monkeypatch):
+    """Simulates two concurrent calls with identical text: both pass the pre-check
+    dedup SELECT (neither sees the other's row yet), so both run the graph, then
+    both attempt the INSERT. We drive this deterministically by pre-inserting the
+    winning row (with the same file_hash) *after* the pre-check would have run but
+    *before* our call's INSERT — a real Postgres unique-violation, not a mocked one.
+    """
+    import assistant.ingest as ingest
+    from assistant.db.client import get_connection
+
+    text = "unique text four " + REF_PREFIX
+    file_hash = ingest._hash(text)
+
+    # Seed the "winning racer's" row directly, bypassing ingest_text, so our call's
+    # pre-check SELECT (which runs first, before this) still sees no existing row —
+    # we insert only right as ingest_text is about to build_graph, simulating the
+    # other request having already committed by the time our INSERT runs.
+    real_get_connection = ingest.get_connection
+
+    def seed_before_graph():
+        with real_get_connection() as conn:
+            conn.execute(
+                "INSERT INTO raw_documents (source, sender, thread_id, body, file_hash)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (REF_PREFIX + "winner", "unknown", None, "winner body", file_hash),
+            )
+        return FakeApp({"escalation_id": 777})
+
+    monkeypatch.setattr(ingest, "build_graph", seed_before_graph)
+
+    result = ingest.ingest_text(text, source=REF_PREFIX + "race")
+
+    # Our racer's own INSERT hit the real unique constraint and raised
+    # psycopg.errors.UniqueViolation internally; ingest_text must not propagate it.
+    assert result["status"] == "escalated"
+    assert result["escalation_id"] == 777
+
+    with get_connection() as conn:
+        winner_row = conn.execute(
+            "SELECT id, source FROM raw_documents WHERE file_hash=%s", (file_hash,)
+        ).fetchone()
+    # Exactly one row for this file_hash: our racer's INSERT did not create a second one.
+    assert winner_row[1] == REF_PREFIX + "winner"
+    assert result["raw_document_id"] == winner_row[0]
+
+
 def test_stores_redacted_body_not_raw(clean, monkeypatch):
     import assistant.ingest as ingest
 

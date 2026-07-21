@@ -9,6 +9,8 @@ it succeeds).
 """
 import hashlib
 
+import psycopg
+
 from assistant.db.client import get_connection
 from assistant.graph import build_graph
 from assistant.redact import redact
@@ -32,13 +34,33 @@ def ingest_text(raw_text: str, source: str = "web-import") -> dict:
     )
 
     redacted, _ = redact(raw_text)
-    with get_connection() as conn:
-        row = conn.execute(
-            "INSERT INTO raw_documents (source, sender, thread_id, body, file_hash)"
-            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (source, "unknown", None, redacted, file_hash),
-        ).fetchone()
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "INSERT INTO raw_documents (source, sender, thread_id, body, file_hash)"
+                " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (source, "unknown", None, redacted, file_hash),
+            ).fetchone()
+        raw_document_id = row[0]
+    except psycopg.errors.UniqueViolation:
+        # Lost the race: another concurrent call inserted the same file_hash between our
+        # pre-check and our insert. The graph already ran (and its own review_item/
+        # escalation row is real and durable) — only OUR insert failed. Re-fetch the
+        # winning row's id and report the graph's actual outcome against it, rather than
+        # masking the fact that a review_item/escalation was genuinely created.
+        with get_connection() as conn:
+            raw_document_id = conn.execute(
+                "SELECT id FROM raw_documents WHERE file_hash=%s", (file_hash,)
+            ).fetchone()[0]
 
     if out.get("escalation_id"):
-        return {"status": "escalated", "escalation_id": out["escalation_id"], "raw_document_id": row[0]}
-    return {"status": "drafted", "review_item_id": out["review_item_id"], "raw_document_id": row[0]}
+        return {
+            "status": "escalated",
+            "escalation_id": out["escalation_id"],
+            "raw_document_id": raw_document_id,
+        }
+    return {
+        "status": "drafted",
+        "review_item_id": out["review_item_id"],
+        "raw_document_id": raw_document_id,
+    }
