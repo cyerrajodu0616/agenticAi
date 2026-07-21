@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://assistant:assistant@localhost:5433/assistant"
 )
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.80"))
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.75"))
 
 _REQUIRED_CLOUD_KEYS = ("GROQ_API_KEY", "GOOGLE_API_KEY")
 
