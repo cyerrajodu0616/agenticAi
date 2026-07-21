@@ -207,6 +207,7 @@
     margin: 0.5rem 0;
   }
   .import-panel input[type=file] { margin-bottom: 0.5rem; display: block; }
+  .import-panel input[type=text] { margin-bottom: 0.5rem; }
   .import-panel textarea { margin-bottom: 0.5rem; }
 
   /* --- proposal / pending-state card -------------------------------- */
@@ -286,7 +287,7 @@
     font-size: 0.82rem;
     line-height: 1.4;
   }
-  td[contenteditable] { border-radius: 4px; }
+  td[contenteditable] { border-radius: 4px; white-space: pre-wrap; }
   td[contenteditable]:hover { background: var(--paper); }
   td.row-actions { font-family: var(--font-body); white-space: nowrap; }
   td.row-actions button { margin-right: 0.3rem; padding: 0.25rem 0.6rem; font-size: 0.78rem; }
@@ -353,6 +354,16 @@
         <button onclick="loadKb()">Search</button>
         <button onclick="document.getElementById('kb-search').value='';loadKb()">Show recent</button>
       </div>
+
+      <details class="import-panel">
+        <summary>Teach a Q&amp;A pair directly</summary>
+        <p class="import-hint">Skips the assistant's own extraction — you supply the exact question and answer, saved as-is (no rewriting). Best for known facts, runbooks, and commands where you already have the wording right.</p>
+        <input type="text" id="teach-question" placeholder="Question (e.g. How do I sync cgCarrier data from S3 to Blob?)">
+        <textarea id="teach-answer" placeholder="Answer — multi-line is fine" rows="4"></textarea>
+        <button class="primary" onclick="runDirectTeach()">Save</button>
+        <div id="teach-result"></div>
+      </details>
+
       <table id="kb-table"><thead><tr><th>Question</th><th>Answer</th><th></th></tr></thead><tbody></tbody></table>
     </section>
 
@@ -484,6 +495,30 @@ async function runImport() {
     textArea.value = '';
     _lastTasksJson = '';
     loadTasks();
+  } catch (e) {
+    resultDiv.innerHTML = '<span class="error">' + esc(e.message) + '</span>';
+  }
+}
+
+async function runDirectTeach() {
+  const questionInput = document.getElementById('teach-question');
+  const answerArea = document.getElementById('teach-answer');
+  const resultDiv = document.getElementById('teach-result');
+  resultDiv.innerHTML = '';
+
+  const question = questionInput.value.trim();
+  const answer = answerArea.value.trim();
+  if (!question || !answer) {
+    resultDiv.innerHTML = '<span class="error">Fill in both the question and the answer.</span>';
+    return;
+  }
+
+  try {
+    await api('POST', '/api/teach/confirm', {question, answer});
+    resultDiv.innerHTML = '<div class="settled">Learned.</div>';
+    questionInput.value = '';
+    answerArea.value = '';
+    if (document.getElementById('tab-kb').classList.contains('active')) loadKb();
   } catch (e) {
     resultDiv.innerHTML = '<span class="error">' + esc(e.message) + '</span>';
   }
