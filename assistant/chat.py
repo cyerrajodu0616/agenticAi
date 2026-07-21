@@ -179,7 +179,20 @@ def handle_edit_delete(intent: ChatIntent, text: str, ask_fn, say_fn) -> None:
     if q is None and a is None:
         say_fn("Nothing to change.")
         return
-    say_fn("Updated (re-embedded)." if kb_update(entry_id, question=q, answer=a) else "Not found.")
+    old = next((h for h in hits if h["id"] == entry_id), {})
+    say_fn(
+        "Proposed edit for #{id}:\n  Q: {old_q} -> {new_q}\n  A: {old_a} -> {new_a}".format(
+            id=entry_id,
+            old_q=old.get("question", "?"),
+            new_q=q if q is not None else "(keep)",
+            old_a=old.get("answer", "?"),
+            new_a=a if a is not None else "(keep)",
+        )
+    )
+    if ask_fn("Save this edit? [y/n] ").strip().lower() == "y":
+        say_fn("Updated (re-embedded)." if kb_update(entry_id, question=q, answer=a) else "Not found.")
+    else:
+        say_fn("Not saved.")
 
 
 def run_repl(ask_fn=input, say_fn=print) -> None:
@@ -203,7 +216,11 @@ def run_repl(ask_fn=input, say_fn=print) -> None:
         if text.lower() == "help":
             say_fn(HELP)
             continue
-        intent = classify_chat(text)
+        try:
+            intent = classify_chat(text)
+        except Exception:
+            say_fn("Sorry, I couldn't understand that — try rephrasing, or type 'help'.")
+            continue
         if intent.action == "teach":
             handle_teach(text, ask_fn, say_fn)
         elif intent.action == "ask":

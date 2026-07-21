@@ -89,3 +89,57 @@ def test_delete_requires_typed_confirmation(monkeypatch):
     intent = chat.ChatIntent(action="delete_kb", ref_id=None, reasoning="x")
     chat.handle_edit_delete(intent, "remove the old wifi answer", ask, say)
     assert deleted == []
+
+
+def test_edit_confirm_no_does_not_update(monkeypatch):
+    import assistant.chat as chat
+
+    monkeypatch.setattr(
+        chat, "kb_find",
+        lambda t: [{"id": 3, "question": "Old Q?", "answer": "Old A", "similarity": 0.9}],
+    )
+    called = []
+    monkeypatch.setattr(chat, "kb_update", lambda *a, **kw: called.append((a, kw)) or True)
+    # picks entry 3, edits question+answer, but declines the final confirm
+    ask, say, said = _io(["3", "New Q?", "New A", "n"])
+    intent = chat.ChatIntent(action="edit_kb", ref_id=None, reasoning="x")
+    chat.handle_edit_delete(intent, "that answer about wifi is wrong", ask, say)
+    assert called == []
+    assert any("Not saved" in s for s in said)
+
+
+def test_edit_confirm_yes_updates(monkeypatch):
+    import assistant.chat as chat
+
+    monkeypatch.setattr(
+        chat, "kb_find",
+        lambda t: [{"id": 3, "question": "Old Q?", "answer": "Old A", "similarity": 0.9}],
+    )
+    called = []
+    monkeypatch.setattr(chat, "kb_update", lambda *a, **kw: called.append((a, kw)) or True)
+    ask, say, said = _io(["3", "New Q?", "New A", "y"])
+    intent = chat.ChatIntent(action="edit_kb", ref_id=None, reasoning="x")
+    chat.handle_edit_delete(intent, "that answer about wifi is wrong", ask, say)
+    assert len(called) == 1
+    args, kwargs = called[0]
+    assert args == (3,)
+    assert kwargs == {"question": "New Q?", "answer": "New A"}
+
+
+def test_run_repl_survives_classify_exception(monkeypatch):
+    import assistant.chat as chat
+    import assistant.config as config
+    import assistant.db.client as db_client
+
+    # run_repl imports these locally at call time, so patch the source modules.
+    monkeypatch.setattr(config, "validate", lambda: None)
+    monkeypatch.setattr(db_client, "init_schema", lambda: None)
+
+    def boom(text):
+        raise ValueError("Groq emitted the string 'None' instead of JSON null")
+
+    monkeypatch.setattr(chat, "classify_chat", boom)
+    ask, say, said = _io(["some confusing input", "quit"])
+    chat.run_repl(ask_fn=ask, say_fn=say)
+    assert any("couldn't understand" in s for s in said)
+    assert said[-1] == "bye"
