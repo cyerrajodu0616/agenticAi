@@ -2,51 +2,340 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>assistant</title>
 <style>
-  body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
-  nav button { padding: 0.5rem 1rem; margin-right: 0.5rem; cursor: pointer; }
-  nav button.active { font-weight: bold; text-decoration: underline; }
+  :root {
+    --paper: #FAF8F3;
+    --paper-raised: #FFFFFF;
+    --ink: #1F2421;
+    --slate: #5B6664;
+    --line: #E4DED2;
+    --signal: #C4622D;
+    --signal-bg: #FBEEE4;
+    --confirm: #3D6B52;
+    --confirm-bg: #EAF2ED;
+    --danger: #A23B3B;
+    --danger-bg: #FBECEC;
+    --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', Palatino, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-body);
+    color: var(--ink);
+    background: var(--paper);
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  .app {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* --- rail --------------------------------------------------------- */
+
+  .rail {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--paper-raised);
+    border-right: 1px solid var(--line);
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  .rail-brand {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-style: italic;
+    letter-spacing: 0.01em;
+    padding: 0 0.5rem;
+  }
+
+  .rail nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .rail nav button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font: inherit;
+    font-size: 0.95rem;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--radius);
+    color: var(--slate);
+    padding: 0.55rem 0.65rem;
+    cursor: pointer;
+  }
+
+  .rail nav button:hover { background: var(--paper); color: var(--ink); }
+
+  .rail nav button.active {
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
+  }
+
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    background: var(--signal);
+    color: #fff;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    min-width: 1.3em;
+    text-align: center;
+  }
+
+  .rail nav button.active .badge { background: var(--signal); }
+
+  /* --- content -------------------------------------------------------- */
+
+  .content {
+    flex: 1;
+    padding: 2rem 2.5rem;
+    max-width: 880px;
+  }
+
   .tab { display: none; }
   .tab.active { display: block; }
-  .msg { margin: 0.5rem 0; padding: 0.5rem; border-radius: 6px; }
-  .msg.user { background: #e8f0fe; text-align: right; }
-  .msg.bot { background: #f1f1f1; }
-  .proposal { border: 1px solid #ccc; padding: 0.75rem; margin: 0.5rem 0; border-radius: 6px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  td, th { border: 1px solid #ddd; padding: 0.4rem; text-align: left; vertical-align: top; }
-  textarea, input[type=text] { width: 100%; box-sizing: border-box; }
-  .error { color: #b00020; }
-  .row-actions button { margin-right: 0.25rem; }
+
+  h2.section-title {
+    font-family: var(--font-display);
+    font-weight: normal;
+    font-style: italic;
+    font-size: 1.4rem;
+    margin: 0 0 1.25rem;
+    color: var(--ink);
+  }
+
+  h3.subhead {
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--slate);
+    margin: 1.75rem 0 0.75rem;
+    font-weight: 600;
+  }
+  h3.subhead:first-of-type { margin-top: 0; }
+
+  a:focus-visible, button:focus-visible, input:focus-visible,
+  textarea:focus-visible, [contenteditable]:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+
+  button {
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    background: var(--paper-raised);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.85rem;
+  }
+  button:hover { border-color: var(--slate); }
+
+  button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  button.primary:hover { opacity: 0.85; }
+
+  input[type=text], textarea {
+    font: inherit;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.65rem;
+    color: var(--ink);
+  }
+
+  /* --- chat ------------------------------------------------------------ */
+
+  #chat-log { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; }
+
+  .msg {
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--radius);
+    font-size: 0.92rem;
+    line-height: 1.45;
+    max-width: 80%;
+  }
+  .msg.user {
+    background: var(--ink);
+    color: var(--paper);
+    align-self: flex-end;
+  }
+  .msg.bot { background: var(--paper-raised); border: 1px solid var(--line); align-self: flex-start; }
+
+  .chat-row { display: flex; gap: 0.5rem; }
+  .chat-row input { flex: 1; }
+
+  /* --- proposal / pending-state card -------------------------------- */
+  /* Signature element: a rust-colored left rule + uppercase eyebrow marks
+     anything awaiting your confirmation. Settled content never gets this
+     treatment — the color itself encodes "this needs you", not decoration. */
+
+  .proposal {
+    background: var(--signal-bg);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--signal);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.9rem;
+    margin: 0.6rem 0;
+    font-size: 0.9rem;
+  }
+  .proposal .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--signal);
+    margin-bottom: 0.4rem;
+  }
+  .proposal textarea { margin: 0.5rem 0; }
+  .proposal button { margin-right: 0.4rem; margin-top: 0.5rem; }
+
+  .settled {
+    background: var(--confirm-bg);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--confirm);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.85rem;
+    font-size: 0.85rem;
+    color: var(--confirm);
+    margin: 0.6rem 0;
+  }
+
+  .error {
+    background: var(--danger-bg);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--danger);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.85rem;
+    color: var(--danger);
+    font-size: 0.85rem;
+    display: inline-block;
+  }
+
+  .empty {
+    color: var(--slate);
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+
+  /* --- KB table ------------------------------------------------------- */
+
+  .kb-controls { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .kb-controls input { flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--slate);
+    font-weight: 600;
+    padding: 0 0.5rem 0.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+  td {
+    border-bottom: 1px solid var(--line);
+    padding: 0.6rem 0.5rem;
+    vertical-align: top;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+  td[contenteditable] { border-radius: 4px; }
+  td[contenteditable]:hover { background: var(--paper); }
+  td.row-actions { font-family: var(--font-body); white-space: nowrap; }
+  td.row-actions button { margin-right: 0.3rem; padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+
+  /* --- tasks ------------------------------------------------------------ */
+
+  .task-head {
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+  }
+  .task-head .who { color: var(--slate); }
+
+  /* --- responsive -------------------------------------------------------- */
+
+  @media (max-width: 720px) {
+    .app { flex-direction: column; }
+    .rail {
+      width: auto;
+      flex-direction: row;
+      align-items: center;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+      padding: 0.75rem 1rem;
+    }
+    .rail nav { flex-direction: row; }
+    .content { padding: 1.25rem; }
+    .msg { max-width: 95%; }
+  }
 </style>
 </head>
 <body>
-<h1>assistant</h1>
-<nav>
-  <button id="tab-btn-chat" class="active" onclick="showTab('chat')">Chat</button>
-  <button id="tab-btn-kb" onclick="showTab('kb')">Knowledge Base</button>
-  <button id="tab-btn-tasks" onclick="showTab('tasks')">Tasks</button>
-</nav>
+<div class="app">
+  <aside class="rail">
+    <div class="rail-brand">assistant</div>
+    <nav>
+      <button id="tab-btn-chat" class="active" onclick="showTab('chat')">Chat</button>
+      <button id="tab-btn-kb" onclick="showTab('kb')">Knowledge</button>
+      <button id="tab-btn-tasks" onclick="showTab('tasks')">Tasks <span class="badge" id="tasks-badge" hidden>0</span></button>
+    </nav>
+  </aside>
 
-<section id="tab-chat" class="tab active">
-  <div id="chat-log"></div>
-  <input type="text" id="chat-input" placeholder="Ask, teach, or correct..." style="width:80%">
-  <button onclick="sendChat()">Send</button>
-</section>
+  <main class="content">
+    <section id="tab-chat" class="tab active">
+      <h2 class="section-title">Ask, teach, or correct</h2>
+      <div id="chat-log"></div>
+      <div class="chat-row">
+        <input type="text" id="chat-input" placeholder="Ask a question, teach a fact, or say what's wrong...">
+        <button class="primary" onclick="sendChat()">Send</button>
+      </div>
+    </section>
 
-<section id="tab-kb" class="tab">
-  <input type="text" id="kb-search" placeholder="Search knowledge base...">
-  <button onclick="loadKb()">Search</button>
-  <button onclick="document.getElementById('kb-search').value='';loadKb()">Show recent</button>
-  <table id="kb-table"><thead><tr><th>Question</th><th>Answer</th><th></th></tr></thead><tbody></tbody></table>
-</section>
+    <section id="tab-kb" class="tab">
+      <h2 class="section-title">Knowledge base</h2>
+      <div class="kb-controls">
+        <input type="text" id="kb-search" placeholder="Search...">
+        <button onclick="loadKb()">Search</button>
+        <button onclick="document.getElementById('kb-search').value='';loadKb()">Show recent</button>
+      </div>
+      <table id="kb-table"><thead><tr><th>Question</th><th>Answer</th><th></th></tr></thead><tbody></tbody></table>
+    </section>
 
-<section id="tab-tasks" class="tab">
-  <h3>Escalations</h3>
-  <div id="escalations-list"></div>
-  <h3>Drafts</h3>
-  <div id="drafts-list"></div>
-</section>
+    <section id="tab-tasks" class="tab">
+      <h2 class="section-title">Waiting on you</h2>
+      <h3 class="subhead">Escalations</h3>
+      <div id="escalations-list"></div>
+      <h3 class="subhead">Drafts</h3>
+      <div id="drafts-list"></div>
+    </section>
+  </main>
+</div>
 
 <script>
 // Escapes text for safe interpolation into innerHTML. Everything rendered here can
@@ -89,6 +378,7 @@ function logMsg(who, html) {
   div.className = 'msg ' + who;
   div.innerHTML = html;
   document.getElementById('chat-log').appendChild(div);
+  div.scrollIntoView({block: 'nearest'});
 }
 
 async function sendChat() {
@@ -105,26 +395,28 @@ async function sendChat() {
       const id = 'proposal-' + Date.now();
       _pendingProposals[id] = {question: data.question, answer: data.answer};
       logMsg('bot', `<div class="proposal" id="${id}">
-        <div>Proposed: <b>Q:</b> ${esc(data.question)}<br><b>A:</b> ${esc(data.answer)}</div>
-        <button onclick="confirmTeach('${id}')">Save</button>
+        <div class="eyebrow">Proposed</div>
+        <div><b>Q:</b> ${esc(data.question)}<br><b>A:</b> ${esc(data.answer)}</div>
+        <button class="primary" onclick="confirmTeach('${id}')">Save</button>
         <button onclick="discardProposal('${id}')">Discard</button>
       </div>`);
     } else if (data.action === 'edit_kb' || data.action === 'delete_kb') {
       if (!data.matches.length) { logMsg('bot', 'No matching knowledge entries found.'); return; }
       const id = 'proposal-' + Date.now();
-      let html = `<div class="proposal" id="${id}"><div>Matches:</div>`;
+      let html = `<div class="proposal" id="${id}"><div class="eyebrow">Matches</div>`;
       for (const m of data.matches) {
         html += `<div>#${m.id} (sim ${m.similarity.toFixed(2)}) Q: ${esc(m.question)}<br>A: ${esc(m.answer)}</div>`;
       }
-      html += `<div>Use the Knowledge Base tab to edit or delete a specific entry.</div></div>`;
+      html += `<div>Use the Knowledge tab to edit or delete a specific entry.</div></div>`;
       logMsg('bot', html);
     } else if (data.action === 'resolve') {
       if (data.error) { logMsg('bot', '<span class="error">' + esc(data.error) + '</span>'); return; }
       const id = 'proposal-' + Date.now();
       _pendingProposals[id] = {escalationId: data.escalation_id, resolution: data.resolution};
       logMsg('bot', `<div class="proposal" id="${id}">
-        <div>Resolution for escalation #${data.escalation_id} (${esc(data.question)}):<br>${esc(data.resolution)}</div>
-        <button onclick="confirmResolve('${id}')">Resolve</button>
+        <div class="eyebrow">Proposed resolution</div>
+        <div>Escalation #${data.escalation_id} (${esc(data.question)}):<br>${esc(data.resolution)}</div>
+        <button class="primary" onclick="confirmResolve('${id}')">Resolve</button>
         <button onclick="discardProposal('${id}')">Discard</button>
       </div>`);
     } else {
@@ -145,7 +437,7 @@ async function confirmTeach(elId) {
   const p = _pendingProposals[elId];
   try {
     await api('POST', '/api/teach/confirm', {question: p.question, answer: p.answer});
-    document.getElementById(elId).outerHTML = 'Learned.';
+    document.getElementById(elId).outerHTML = '<div class="settled">Learned.</div>';
   } catch (e) {
     logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
   } finally {
@@ -157,7 +449,7 @@ async function confirmResolve(elId) {
   const p = _pendingProposals[elId];
   try {
     await api('POST', `/api/escalation/${p.escalationId}/resolve`, {resolution_text: p.resolution});
-    document.getElementById(elId).outerHTML = 'Resolved and learned.';
+    document.getElementById(elId).outerHTML = '<div class="settled">Resolved and learned.</div>';
   } catch (e) {
     logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
   } finally {
@@ -211,30 +503,38 @@ async function deleteKb(id) {
 let _lastTasksJson = '';
 async function loadTasks() {
   const data = await api('GET', '/api/tasks');
+
+  const total = data.escalations.length + data.drafts.length;
+  const badge = document.getElementById('tasks-badge');
+  badge.textContent = total;
+  badge.hidden = total === 0;
+
   const asJson = JSON.stringify(data);
   if (asJson === _lastTasksJson) return;
   _lastTasksJson = asJson;
 
   const escDiv = document.getElementById('escalations-list');
-  escDiv.innerHTML = data.escalations.length ? '' : '<p>None pending.</p>';
+  escDiv.innerHTML = data.escalations.length ? '' : '<p class="empty">None pending.</p>';
   for (const e of data.escalations) {
     const div = document.createElement('div');
     div.className = 'proposal';
     div.innerHTML = `
-      <div>#${e.id} from ${esc(e.sender)}: ${esc(e.question)}</div>
-      <textarea id="resolve-text-${e.id}" placeholder="Your answer..."></textarea>
-      <button onclick="draftResolution(${e.id})">Draft resolution</button>
+      <div class="eyebrow">Pending</div>
+      <div class="task-head">#${e.id} <span class="who">from ${esc(e.sender)}</span><br>${esc(e.question)}</div>
+      <textarea id="resolve-text-${e.id}" placeholder="Your answer..." rows="2"></textarea>
+      <button class="primary" onclick="draftResolution(${e.id})">Draft resolution</button>
       <div id="resolve-draft-${e.id}"></div>`;
     escDiv.appendChild(div);
   }
 
   const draftsDiv = document.getElementById('drafts-list');
-  draftsDiv.innerHTML = data.drafts.length ? '' : '<p>None pending.</p>';
+  draftsDiv.innerHTML = data.drafts.length ? '' : '<p class="empty">None pending.</p>';
   for (const d of data.drafts) {
     const div = document.createElement('div');
     div.className = 'proposal';
     div.innerHTML = `
-      <div>#${d.id} for ${esc(d.sender)}: ${esc(d.question)}</div>
+      <div class="eyebrow">Pending</div>
+      <div class="task-head">#${d.id} <span class="who">for ${esc(d.sender)}</span><br>${esc(d.question)}</div>
       <button onclick="viewDraft(${d.id})">View / Edit</button>
       <button onclick="rejectDraft(${d.id})">Reject</button>
       <div id="draft-detail-${d.id}"></div>`;
@@ -250,7 +550,7 @@ async function viewDraft(id) {
     detailDiv.dataset.loaded = '1';
     detailDiv.innerHTML = `
       <textarea id="draft-text-${id}" rows="4">${esc(item.payload.draft)}</textarea>
-      <button onclick="approveDraft(${id})">Approve (as edited above)</button>`;
+      <button class="primary" onclick="approveDraft(${id})">Approve (as edited above)</button>`;
   } catch (e) {
     alert(e.message);
   }
@@ -275,8 +575,9 @@ async function draftResolution(escId) {
     const data = await api('POST', `/api/escalation/${escId}/draft-resolution`, {text});
     _pendingProposals['resolve-task-' + escId] = data.resolution;
     document.getElementById('resolve-draft-' + escId).innerHTML = `
-      <div>Draft: ${esc(data.resolution)}</div>
-      <button onclick="confirmResolveTask(${escId})">Confirm & Resolve</button>`;
+      <div class="eyebrow">Draft</div>
+      <div>${esc(data.resolution)}</div>
+      <button class="primary" onclick="confirmResolveTask(${escId})">Confirm & Resolve</button>`;
   } catch (e) {
     alert(e.message);
   }
@@ -305,9 +606,8 @@ async function rejectDraft(id) {
   }
 }
 
-setInterval(() => {
-  if (document.getElementById('tab-tasks').classList.contains('active')) loadTasks();
-}, 10000);
+setInterval(loadTasks, 10000);
+loadTasks();  // populate the sidebar badge immediately, even before visiting the Tasks tab
 </script>
 </body>
 </html>
