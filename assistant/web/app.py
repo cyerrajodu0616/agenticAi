@@ -33,7 +33,7 @@ async def _lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="assistant web UI", lifespan=_lifespan)
+app = FastAPI(title="YC PersonalAgent", lifespan=_lifespan)
 _STATIC_DIR = Path(__file__).parent / "static"
 
 

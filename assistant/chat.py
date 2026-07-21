@@ -208,7 +208,7 @@ def run_repl(ask_fn=input, say_fn=print) -> None:
 
     config.validate()
     init_schema()
-    say_fn("assistant chat — type 'help' or 'quit'")
+    say_fn("YC PersonalAgent — type 'help' or 'quit'")
     while True:
         try:
             text = ask_fn("> ").strip()
