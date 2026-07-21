@@ -287,8 +287,10 @@
     font-size: 0.82rem;
     line-height: 1.4;
   }
-  td[contenteditable] { border-radius: 4px; white-space: pre-wrap; }
-  td[contenteditable]:hover { background: var(--paper); }
+  td[contenteditable] { border-radius: 4px; white-space: pre-wrap; cursor: text; }
+  td[contenteditable]:hover { background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
+  tr.row-saved { background: var(--confirm-bg); transition: background 1.2s ease-out; }
+  .kb-hint { font-size: 0.78rem; color: var(--slate); margin: 0.75rem 0 0; }
   td.row-actions { font-family: var(--font-body); white-space: nowrap; }
   td.row-actions button { margin-right: 0.3rem; padding: 0.25rem 0.6rem; font-size: 0.78rem; }
 
@@ -364,6 +366,7 @@
         <div id="teach-result"></div>
       </details>
 
+      <p class="kb-hint">Click into a Question or Answer cell to edit it, then click Save. Edits happen in place — there's no separate edit mode.</p>
       <table id="kb-table"><thead><tr><th>Question</th><th>Answer</th><th></th></tr></thead><tbody></tbody></table>
     </section>
 
@@ -577,11 +580,14 @@ async function loadKb() {
 }
 
 async function saveKb(id) {
-  const question = document.getElementById('kb-q-' + id).innerText;
+  const questionCell = document.getElementById('kb-q-' + id);
+  const question = questionCell.innerText;
   const answer = document.getElementById('kb-a-' + id).innerText;
   try {
     await api('PATCH', '/api/kb/' + id, {question, answer});
-    loadKb();
+    const row = questionCell.closest('tr');
+    if (row) row.classList.add('row-saved');
+    setTimeout(loadKb, 700);  // brief highlight before the table refreshes
   } catch (e) {
     alert(e.message);
   }
