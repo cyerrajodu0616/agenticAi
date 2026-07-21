@@ -71,6 +71,17 @@ def test_review_approve_already_resolved_returns_409(client, monkeypatch):
     assert resp.status_code == 409
 
 
+def test_review_approve_missing_item_returns_404(client, monkeypatch):
+    import assistant.web.app as web_app
+
+    def raise_exit(item_id, edited_text=None):
+        raise SystemExit(f"no review item {item_id}")
+
+    monkeypatch.setattr(web_app, "review_approve", raise_exit)
+    resp = client.post("/api/review/999/approve", json={})
+    assert resp.status_code == 404
+
+
 def test_review_reject_not_pending_returns_409(client, monkeypatch):
     import assistant.web.app as web_app
 

@@ -160,6 +160,8 @@ def approve_review_item(item_id: int, req: ApproveRequest) -> dict:
     try:
         return review_approve(item_id, req.edited_text)
     except SystemExit as e:
+        if str(e).startswith("no review item"):
+            raise HTTPException(404, str(e))
         raise HTTPException(409, str(e))
 
 
