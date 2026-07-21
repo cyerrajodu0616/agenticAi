@@ -61,3 +61,28 @@ def test_reject_marks_rejected_and_learns_nothing(item_id):
         ).fetchone()[0]
     assert status == "rejected"
     assert learned == 0
+
+
+def test_approve_already_approved_raises(item_id, monkeypatch):
+    import assistant.review as review
+
+    monkeypatch.setattr(review, "_to_clipboard", lambda text: None)  # no pbcopy in CI
+    review.approve(item_id, edited_text="first approval")
+    with pytest.raises(SystemExit):
+        review.approve(item_id, edited_text="second approval")
+
+
+def test_reject_already_approved_is_noop(item_id, monkeypatch):
+    import assistant.review as review
+
+    monkeypatch.setattr(review, "_to_clipboard", lambda text: None)  # no pbcopy in CI
+    review.approve(item_id, edited_text="the approved answer")
+
+    from assistant.db.client import get_connection
+
+    review.reject(item_id)
+    with get_connection() as conn:
+        status = conn.execute(
+            "SELECT status FROM review_items WHERE id=%s", (item_id,)
+        ).fetchone()[0]
+    assert status == "approved"

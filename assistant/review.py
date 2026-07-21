@@ -47,12 +47,6 @@ def approve(item_id: int, edited_text: str | None = None) -> dict:
         raise SystemExit(f"item {item_id} is already {item['status']}")
     payload = item["payload"]
     final_text = edited_text if edited_text is not None else payload["draft"]
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE review_items SET status='approved',"
-            " resolution=%s, resolved_at=now() WHERE id=%s",
-            (json.dumps({"final_text": final_text}), item_id),
-        )
     if item["kind"] == "reply":
         kb_learn(
             question=payload["question"],
@@ -60,17 +54,25 @@ def approve(item_id: int, edited_text: str | None = None) -> dict:
             created_by="review-cli",
             source_refs=[f"review_item:{item_id}"],
         )
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE review_items SET status='approved',"
+            " resolution=%s, resolved_at=now() WHERE id=%s",
+            (json.dumps({"final_text": final_text}), item_id),
+        )
+    if item["kind"] == "reply":
         _to_clipboard(final_text)
     return {"final_text": final_text}
 
 
-def reject(item_id: int) -> None:
+def reject(item_id: int) -> bool:
     with get_connection() as conn:
-        conn.execute(
+        result = conn.execute(
             "UPDATE review_items SET status='rejected', resolved_at=now()"
             " WHERE id=%s AND status='pending'",
             (item_id,),
         )
+        return result.rowcount > 0
 
 
 def _edit_in_editor(initial: str) -> str:
@@ -108,8 +110,10 @@ def main() -> None:
         print("approved — final text copied to clipboard:\n")
         print(result["final_text"])
     elif args.cmd == "reject":
-        reject(args.id)
-        print("rejected")
+        if reject(args.id):
+            print("rejected")
+        else:
+            print("nothing to reject (item not pending)")
 
 
 if __name__ == "__main__":
