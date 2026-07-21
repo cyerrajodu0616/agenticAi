@@ -1,0 +1,81 @@
+"""Local web UI: a thin JSON API over the existing assistant/ package.
+
+Every route calls an existing kb/tasks/chat/review function and shapes JSON —
+no new business logic lives here. Binds 127.0.0.1 only (see __main__.py); no
+auth is added because of that binding. Writes are two-step: a proposal
+endpoint (read-only) followed by a confirm endpoint that takes the exact
+data the browser displayed, never just an id to "re-derive" from.
+"""
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from assistant import config
+from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
+from assistant.db.client import init_schema
+from assistant.kb import kb_find, kb_learn
+from assistant.redact import redact
+from assistant.tasks import get_escalation
+
+app = FastAPI(title="assistant web UI")
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    config.validate()
+    init_schema()
+
+
+class ChatRequest(BaseModel):
+    text: str
+
+
+class TeachConfirmRequest(BaseModel):
+    question: str
+    answer: str
+
+
+@app.post("/api/chat")
+def chat_endpoint(req: ChatRequest) -> dict:
+    intent = classify_chat(req.text)
+    if intent.action == "ask":
+        return {"action": "ask", "answer": answer_from_kb(req.text)}
+    if intent.action == "teach":
+        pair = extract_teach_pair(req.text)
+        return {"action": "teach", "question": pair.question, "answer": pair.answer}
+    if intent.action in ("edit_kb", "delete_kb"):
+        redacted, _ = redact(req.text)
+        matches = kb_find(redacted)
+        return {"action": intent.action, "matches": matches}
+    if intent.action == "resolve":
+        if intent.ref_id is None:
+            return {"action": "resolve", "error": "no escalation id given"}
+        esc = get_escalation(intent.ref_id)
+        if esc is None or esc["status"] != "pending":
+            return {"action": "resolve", "error": f"escalation {intent.ref_id} not found or not pending"}
+        resolution = extract_resolution(req.text, esc["question_text"])
+        return {
+            "action": "resolve",
+            "escalation_id": esc["id"],
+            "question": esc["question_text"],
+            "resolution": resolution,
+        }
+    if intent.action == "tasks":
+        return {"action": "tasks", "message": "see the Tasks tab"}
+    return {"action": "other", "message": intent.reasoning}
+
+
+@app.post("/api/teach/confirm")
+def teach_confirm(req: TeachConfirmRequest) -> dict:
+    new_id = kb_learn(
+        question=req.question, answer=req.answer, created_by="web", source_refs=["web"]
+    )
+    return {"id": new_id}
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "index.html")
