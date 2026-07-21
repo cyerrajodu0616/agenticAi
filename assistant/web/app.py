@@ -17,7 +17,7 @@ from starlette.requests import Request
 from assistant import config
 from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
 from assistant.db.client import init_schema
-from assistant.kb import kb_find, kb_learn
+from assistant.kb import kb_delete, kb_find, kb_learn, kb_list_recent, kb_update
 from assistant.redact import redact
 from assistant.tasks import get_escalation
 
@@ -50,6 +50,11 @@ class ChatRequest(BaseModel):
 class TeachConfirmRequest(BaseModel):
     question: str
     answer: str
+
+
+class KbUpdateRequest(BaseModel):
+    question: str | None = None
+    answer: str | None = None
 
 
 @app.post("/api/chat")
@@ -88,6 +93,28 @@ def teach_confirm(req: TeachConfirmRequest) -> dict:
         question=req.question, answer=req.answer, created_by="web", source_refs=["web"]
     )
     return {"id": new_id}
+
+
+@app.get("/api/kb")
+def list_kb(q: str | None = None) -> dict:
+    entries = kb_find(q) if q else kb_list_recent()
+    return {"entries": entries}
+
+
+@app.patch("/api/kb/{entry_id}")
+def update_kb(entry_id: int, req: KbUpdateRequest) -> dict:
+    ok = kb_update(entry_id, question=req.question, answer=req.answer)
+    if not ok:
+        raise HTTPException(404, f"KB entry {entry_id} not found")
+    return {"ok": True}
+
+
+@app.delete("/api/kb/{entry_id}")
+def delete_kb(entry_id: int) -> dict:
+    ok = kb_delete(entry_id)
+    if not ok:
+        raise HTTPException(404, f"KB entry {entry_id} not found")
+    return {"ok": True}
 
 
 @app.get("/")
