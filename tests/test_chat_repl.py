@@ -86,7 +86,7 @@ def test_delete_requires_typed_confirmation(monkeypatch):
     monkeypatch.setattr(chat, "kb_delete", lambda i: deleted.append(i) or True)
     # picks entry 3, but types "yes" instead of "delete" -> refused
     ask, say, said = _io(["3", "yes"])
-    intent = chat.ChatIntent(action="delete_kb", ref_id=None, reasoning="x")
+    intent = chat.ChatIntent(action="delete_kb", ref_id=0, reasoning="x")
     chat.handle_edit_delete(intent, "remove the old wifi answer", ask, say)
     assert deleted == []
 
@@ -100,7 +100,7 @@ def test_edit_delete_redacts_before_kb_find(monkeypatch):
         lambda t: seen.append(t) or [],
     )
     ask, say, said = _io([])
-    intent = chat.ChatIntent(action="delete_kb", ref_id=None, reasoning="x")
+    intent = chat.ChatIntent(action="delete_kb", ref_id=0, reasoning="x")
     chat.handle_edit_delete(
         intent, "delete the entry about bob@corp.com, his number is 555-867-5309", ask, say
     )
@@ -120,7 +120,7 @@ def test_edit_confirm_no_does_not_update(monkeypatch):
     monkeypatch.setattr(chat, "kb_update", lambda *a, **kw: called.append((a, kw)) or True)
     # picks entry 3, edits question+answer, but declines the final confirm
     ask, say, said = _io(["3", "New Q?", "New A", "n"])
-    intent = chat.ChatIntent(action="edit_kb", ref_id=None, reasoning="x")
+    intent = chat.ChatIntent(action="edit_kb", ref_id=0, reasoning="x")
     chat.handle_edit_delete(intent, "that answer about wifi is wrong", ask, say)
     assert called == []
     assert any("Not saved" in s for s in said)
@@ -136,7 +136,7 @@ def test_edit_confirm_yes_updates(monkeypatch):
     called = []
     monkeypatch.setattr(chat, "kb_update", lambda *a, **kw: called.append((a, kw)) or True)
     ask, say, said = _io(["3", "New Q?", "New A", "y"])
-    intent = chat.ChatIntent(action="edit_kb", ref_id=None, reasoning="x")
+    intent = chat.ChatIntent(action="edit_kb", ref_id=0, reasoning="x")
     chat.handle_edit_delete(intent, "that answer about wifi is wrong", ask, say)
     assert len(called) == 1
     args, kwargs = called[0]

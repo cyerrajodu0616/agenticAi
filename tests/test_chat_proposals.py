@@ -31,7 +31,7 @@ class FakeComposer:
 def test_classify_chat_redacts_before_llm(monkeypatch):
     import assistant.chat as chat
 
-    fake = FakeStructured(chat.ChatIntent(action="teach", ref_id=None, reasoning="x"))
+    fake = FakeStructured(chat.ChatIntent(action="teach", ref_id=0, reasoning="x"))
     monkeypatch.setattr(chat, "get_model", lambda role: fake)
     intent = chat.classify_chat("remember bob@corp.com owns the sync job")
     assert intent.action == "teach"

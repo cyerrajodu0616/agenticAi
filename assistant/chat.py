@@ -20,8 +20,12 @@ class ChatIntent(BaseModel):
         "edit_kb: user corrects stored knowledge. delete_kb: user wants knowledge removed. "
         "other: anything else."
     )
-    ref_id: int | None = Field(
-        default=None, description="Escalation or KB entry id if the user referenced one."
+    ref_id: int = Field(
+        default=0,
+        description="Escalation or KB entry id if the user referenced one; 0 if none."
+        " Groq's structured output mishandles Optional[int] here (emits literal string"
+        " 'None' instead of null), so this is a required int with a 0 sentinel, not"
+        " int | None — do not revert to Optional without confirming the model handles it.",
     )
     reasoning: str
 
@@ -142,7 +146,7 @@ def handle_tasks(say_fn) -> None:
 
 
 def handle_resolve(intent: ChatIntent, text: str, ask_fn, say_fn) -> None:
-    if intent.ref_id is None:
+    if not intent.ref_id:
         say_fn("Which escalation? Say e.g. 'for escalation 3: <answer>'.")
         return
     esc = get_escalation(intent.ref_id)

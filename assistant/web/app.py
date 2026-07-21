@@ -81,21 +81,31 @@ def chat_endpoint(req: ChatRequest) -> dict:
     except Exception:
         return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
     if intent.action == "ask":
-        return {"action": "ask", "answer": answer_from_kb(req.text)}
+        try:
+            answer = answer_from_kb(req.text)
+        except Exception:
+            return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
+        return {"action": "ask", "answer": answer}
     if intent.action == "teach":
-        pair = extract_teach_pair(req.text)
+        try:
+            pair = extract_teach_pair(req.text)
+        except Exception:
+            return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
         return {"action": "teach", "question": pair.question, "answer": pair.answer}
     if intent.action in ("edit_kb", "delete_kb"):
         redacted, _ = redact(req.text)
         matches = kb_find(redacted)
         return {"action": intent.action, "matches": matches}
     if intent.action == "resolve":
-        if intent.ref_id is None:
+        if not intent.ref_id:
             return {"action": "resolve", "error": "no escalation id given"}
         esc = get_escalation(intent.ref_id)
         if esc is None or esc["status"] != "pending":
             return {"action": "resolve", "error": f"escalation {intent.ref_id} not found or not pending"}
-        resolution = extract_resolution(req.text, esc["question_text"])
+        try:
+            resolution = extract_resolution(req.text, esc["question_text"])
+        except Exception:
+            return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
         return {
             "action": "resolve",
             "escalation_id": esc["id"],

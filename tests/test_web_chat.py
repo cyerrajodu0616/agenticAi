@@ -92,17 +92,19 @@ def test_chat_resolve_with_ref_id_returns_draft(client, monkeypatch):
 def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     import assistant.web.app as web_app
 
-    def _boom(text):
+    def _boom(**kwargs):
         raise ValueError("boom")
 
-    # classify_chat failures are now recovered from (see test below), so exercise
-    # the generic unhandled-exception handler via a different, unprotected call.
-    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("ask"))
-    monkeypatch.setattr(web_app, "answer_from_kb", _boom)
+    # classify_chat/answer_from_kb/extract_teach_pair/extract_resolution failures
+    # are all now recovered from locally (see the tests around this one), so exercise
+    # the generic unhandled-exception handler via a still-unprotected write path.
+    monkeypatch.setattr(web_app, "kb_learn", _boom)
     # raise_server_exceptions=False: let the app's own exception handler produce
     # the response instead of the test client re-raising the original exception.
     no_raise_client = TestClient(web_app.app, raise_server_exceptions=False)
-    resp = no_raise_client.post("/api/chat", json={"text": "trigger a crash"})
+    resp = no_raise_client.post(
+        "/api/teach/confirm", json={"question": "Q?", "answer": "A"}
+    )
     assert resp.status_code == 500
     body = resp.json()
     assert body == {"error": "internal server error"}
@@ -121,6 +123,60 @@ def test_chat_classify_failure_returns_friendly_message(client, monkeypatch):
 
     monkeypatch.setattr(web_app, "classify_chat", _boom)
     resp = client.post("/api/chat", json={"text": "some ask-type question"})
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "action": "other",
+        "message": "Sorry, I couldn't understand that — try rephrasing.",
+    }
+
+
+def test_chat_teach_extraction_failure_returns_friendly_message(client, monkeypatch):
+    """A second, distinct Groq structured-output failure (empty failed_generation,
+    not the ref_id issue) was found live in extract_teach_pair — same recovery."""
+    import assistant.web.app as web_app
+
+    def _boom(text):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("teach"))
+    monkeypatch.setattr(web_app, "extract_teach_pair", _boom)
+    resp = client.post("/api/chat", json={"text": "remember something tricky"})
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "action": "other",
+        "message": "Sorry, I couldn't understand that — try rephrasing.",
+    }
+
+
+def test_chat_ask_answer_failure_returns_friendly_message(client, monkeypatch):
+    import assistant.web.app as web_app
+
+    def _boom(text):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("ask"))
+    monkeypatch.setattr(web_app, "answer_from_kb", _boom)
+    resp = client.post("/api/chat", json={"text": "a question"})
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "action": "other",
+        "message": "Sorry, I couldn't understand that — try rephrasing.",
+    }
+
+
+def test_chat_resolve_extraction_failure_returns_friendly_message(client, monkeypatch):
+    import assistant.web.app as web_app
+
+    def _boom(text, q):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("resolve", ref_id=9))
+    monkeypatch.setattr(
+        web_app, "get_escalation",
+        lambda i: {"id": 9, "sender": "p", "question_text": "How rerun sync?", "status": "pending"},
+    )
+    monkeypatch.setattr(web_app, "extract_resolution", _boom)
+    resp = client.post("/api/chat", json={"text": "tell them something"})
     assert resp.status_code == 200
     assert resp.json() == {
         "action": "other",
