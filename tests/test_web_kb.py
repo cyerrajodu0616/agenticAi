@@ -37,6 +37,20 @@ def test_list_kb_with_query_searches(client, monkeypatch):
     assert captured["text"] == "deploy window"
 
 
+def test_list_kb_with_query_redacts_before_kb_find(client, monkeypatch):
+    import assistant.web.app as web_app
+
+    captured = {}
+    monkeypatch.setattr(
+        web_app, "kb_find",
+        lambda text, **kw: captured.update(text=text) or [],
+    )
+    resp = client.get("/api/kb", params={"q": "contact bob@corp.com about this"})
+    assert resp.status_code == 200
+    assert "bob@corp.com" not in captured["text"]
+    assert "[REDACTED_EMAIL_1]" in captured["text"]
+
+
 def test_patch_kb_updates(client, monkeypatch):
     import assistant.web.app as web_app
 

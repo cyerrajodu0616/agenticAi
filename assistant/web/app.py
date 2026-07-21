@@ -127,7 +127,7 @@ def teach_confirm(req: TeachConfirmRequest) -> dict:
 
 @app.get("/api/kb")
 def list_kb(q: str | None = None) -> dict:
-    entries = kb_find(q) if q else kb_list_recent()
+    entries = kb_find(redact(q)[0]) if q else kb_list_recent()
     return {"entries": entries}
 
 
