@@ -4,7 +4,7 @@ from langchain.chat_models import init_chat_model
 from assistant import config
 
 _ROLES_CLOUD = {
-    "classify": "groq:qwen/qwen3-32b",
+    "classify": "groq:qwen/qwen3.6-27b",
     "compose": "google_genai:gemini-2.5-flash",
     "coder": "google_genai:gemini-2.5-flash",
 }

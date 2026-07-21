@@ -12,7 +12,7 @@ def test_unknown_role_raises(monkeypatch):
 @pytest.mark.parametrize(
     "backend,role,expected",
     [
-        ("cloud", "classify", "groq:qwen/qwen3-32b"),
+        ("cloud", "classify", "groq:qwen/qwen3.6-27b"),
         ("cloud", "compose", "google_genai:gemini-2.5-flash"),
         ("cloud", "coder", "google_genai:gemini-2.5-flash"),
         ("local", "classify", "ollama:qwen3:8b"),
