@@ -45,3 +45,15 @@ def get_embeddings():
     from langchain_ollama import OllamaEmbeddings
 
     return OllamaEmbeddings(model="nomic-embed-text", base_url=config.OLLAMA_BASE_URL)
+
+
+def embedding_model_name() -> str:
+    """The actual embedding model identifier to record on agent_knowledge.embedding_model.
+
+    config.MODEL_BACKEND ("cloud"/"local") is a routing switch, not a model name — this
+    maps it to the real model so rows stay unambiguous across model changes (Plan 4's
+    reembed needs to know which rows were embedded with what).
+    """
+    if config.MODEL_BACKEND == "cloud":
+        return f"gemini-embedding-001@{config.EMBED_DIM}"
+    return "nomic-embed-text"

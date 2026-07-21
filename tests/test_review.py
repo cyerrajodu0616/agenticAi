@@ -23,7 +23,10 @@ def item_id():
     yield row[0]
     with get_connection() as conn:
         conn.execute("DELETE FROM review_items WHERE id=%s", (row[0],))
-        conn.execute("DELETE FROM agent_knowledge WHERE created_by='review-cli'")
+        conn.execute(
+            "DELETE FROM agent_knowledge WHERE %s = ANY(source_refs)",
+            (f"review_item:{row[0]}",),
+        )
 
 
 def test_approve_with_edit_learns_final_text(item_id, monkeypatch):
@@ -40,7 +43,8 @@ def test_approve_with_edit_learns_final_text(item_id, monkeypatch):
             "SELECT status FROM review_items WHERE id=%s", (item_id,)
         ).fetchone()[0]
         learned = conn.execute(
-            "SELECT canonical_answer FROM agent_knowledge WHERE created_by='review-cli'"
+            "SELECT canonical_answer FROM agent_knowledge WHERE %s = ANY(source_refs)",
+            (f"review_item:{item_id}",),
         ).fetchone()
     assert status == "approved"
     assert learned[0] == "the corrected answer"
@@ -57,7 +61,8 @@ def test_reject_marks_rejected_and_learns_nothing(item_id):
             "SELECT status FROM review_items WHERE id=%s", (item_id,)
         ).fetchone()[0]
         learned = conn.execute(
-            "SELECT count(*) FROM agent_knowledge WHERE created_by='review-cli'"
+            "SELECT count(*) FROM agent_knowledge WHERE %s = ANY(source_refs)",
+            (f"review_item:{item_id}",),
         ).fetchone()[0]
     assert status == "rejected"
     assert learned == 0

@@ -29,7 +29,10 @@ def test_learn_then_search_finds_it(clean):
 
 
 def test_search_empty_kb_returns_empty_list(clean):
+    from assistant import config
     from assistant.kb import kb_search
 
-    assert kb_search("completely unrelated question about lunch menus") == [] or True
-    # (an empty-or-low-similarity result is acceptable; routing threshold is applied by caller)
+    results = kb_search("completely unrelated question about lunch menus")
+    # (an empty result is fine; any hit returned must be below the routing threshold
+    # the caller applies — kb_search itself does not filter by similarity)
+    assert all(hit["similarity"] < config.SIMILARITY_THRESHOLD for hit in results)

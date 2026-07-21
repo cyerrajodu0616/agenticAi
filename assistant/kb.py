@@ -1,7 +1,6 @@
 """Semantic search over agent_knowledge + product_knowledge, and the learn upsert."""
-from assistant import config
 from assistant.db.client import get_connection
-from assistant.models import get_embeddings
+from assistant.models import embedding_model_name, get_embeddings
 
 
 def _embed(text: str) -> list[float]:
@@ -46,6 +45,6 @@ def kb_learn(question: str, answer: str, created_by: str, source_refs: list[str]
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (question, answer, vec, config.MODEL_BACKEND, source_refs, created_by),
+            (question, answer, vec, embedding_model_name(), source_refs, created_by),
         ).fetchone()
     return row[0]

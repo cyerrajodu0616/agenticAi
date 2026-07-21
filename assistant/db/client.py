@@ -16,5 +16,9 @@ def init_schema() -> None:
 
 def get_connection() -> psycopg.Connection:
     conn = psycopg.connect(config.DATABASE_URL, autocommit=True)
-    register_vector(conn)
+    try:
+        register_vector(conn)
+    except Exception:
+        conn.close()
+        raise
     return conn

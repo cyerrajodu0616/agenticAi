@@ -38,7 +38,6 @@ class State(TypedDict, total=False):
     draft: str
     review_item_id: int
     escalation_id: int
-    escalation_reason: str
 
 
 def _save_review_item(kind: str, payload: dict) -> int:
@@ -84,7 +83,7 @@ def kb_answer(state: State) -> State:
 
 def compose(state: State) -> State:
     context = "\n\n".join(
-        f"[{h['source']}:{h['title']} sim={h['similarity']:.2f}]\n{h['content']}"
+        f"[{h['source']}:{h['title']} sim={h['similarity']:.2f}]\n{redact(h['content'])[0]}"
         for h in state["kb_hits"]
     )
     llm = get_model("compose")
