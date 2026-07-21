@@ -1,5 +1,4 @@
 """Unit tests — LLM faked, offline."""
-import pytest
 
 
 class FakeStructured:

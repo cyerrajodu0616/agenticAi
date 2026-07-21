@@ -91,6 +91,24 @@ def test_delete_requires_typed_confirmation(monkeypatch):
     assert deleted == []
 
 
+def test_edit_delete_redacts_before_kb_find(monkeypatch):
+    import assistant.chat as chat
+
+    seen = []
+    monkeypatch.setattr(
+        chat, "kb_find",
+        lambda t: seen.append(t) or [],
+    )
+    ask, say, said = _io([])
+    intent = chat.ChatIntent(action="delete_kb", ref_id=None, reasoning="x")
+    chat.handle_edit_delete(
+        intent, "delete the entry about bob@corp.com, his number is 555-867-5309", ask, say
+    )
+    assert len(seen) == 1
+    assert "bob@corp.com" not in seen[0]
+    assert "555-867-5309" not in seen[0]
+
+
 def test_edit_confirm_no_does_not_update(monkeypatch):
     import assistant.chat as chat
 

@@ -157,7 +157,8 @@ def handle_resolve(intent: ChatIntent, text: str, ask_fn, say_fn) -> None:
 
 
 def handle_edit_delete(intent: ChatIntent, text: str, ask_fn, say_fn) -> None:
-    hits = kb_find(text)
+    redacted, _ = redact(text)
+    hits = kb_find(redacted)
     if not hits:
         say_fn("No matching knowledge entries found.")
         return
