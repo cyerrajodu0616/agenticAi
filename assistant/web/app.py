@@ -6,11 +6,13 @@ auth is added because of that binding. Writes are two-step: a proposal
 endpoint (read-only) followed by a confirm endpoint that takes the exact
 data the browser displayed, never just an id to "re-derive" from.
 """
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.requests import Request
 
 from assistant import config
 from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
@@ -19,14 +21,26 @@ from assistant.kb import kb_find, kb_learn
 from assistant.redact import redact
 from assistant.tasks import get_escalation
 
-app = FastAPI(title="assistant web UI")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    config.validate()
+    init_schema()
+    yield
+
+
+app = FastAPI(title="assistant web UI", lifespan=_lifespan)
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    config.validate()
-    init_schema()
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 class ChatRequest(BaseModel):

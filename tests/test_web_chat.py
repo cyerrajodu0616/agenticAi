@@ -89,6 +89,23 @@ def test_chat_resolve_with_ref_id_returns_draft(client, monkeypatch):
     }
 
 
+def test_chat_unhandled_exception_returns_json_error(monkeypatch):
+    import assistant.web.app as web_app
+
+    def _boom(text):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(web_app, "classify_chat", _boom)
+    # raise_server_exceptions=False: let the app's own exception handler produce
+    # the response instead of the test client re-raising the original exception.
+    no_raise_client = TestClient(web_app.app, raise_server_exceptions=False)
+    resp = no_raise_client.post("/api/chat", json={"text": "trigger a crash"})
+    assert resp.status_code == 500
+    body = resp.json()
+    assert "error" in body
+    assert "boom" in body["error"]
+
+
 def test_teach_confirm_writes(client, monkeypatch):
     import assistant.web.app as web_app
 
