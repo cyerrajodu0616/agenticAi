@@ -66,3 +66,19 @@ def test_search_graphify_unreachable_still_returns_local_hits(clean, monkeypatch
     )
     hits = kb.kb_search("where can I find the signed eConsent pdf?")
     assert hits and hits[0]["source"] == "agent"
+
+
+def test_list_recent_orders_newest_first(clean):
+    from assistant.kb import kb_learn, kb_list_recent
+
+    first_id = kb_learn(
+        question="q1", answer="a1", created_by="pytest", source_refs=["thread-789"]
+    )
+    second_id = kb_learn(
+        question="q2", answer="a2", created_by="pytest", source_refs=["thread-789"]
+    )
+    entries = kb_list_recent(limit=50)
+    ids = [e["id"] for e in entries]
+    assert ids.index(second_id) < ids.index(first_id)
+    match = next(e for e in entries if e["id"] == second_id)
+    assert match == {"id": second_id, "question": "q2", "answer": "a2"}

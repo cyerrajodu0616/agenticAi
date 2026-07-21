@@ -111,3 +111,14 @@ def kb_delete(entry_id: int) -> bool:
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM agent_knowledge WHERE id=%s", (entry_id,))
         return cur.rowcount == 1
+
+
+def kb_list_recent(limit: int = 50) -> list[dict]:
+    """Most-recently-created agent_knowledge rows, no embedding call — for browsing."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, canonical_question, canonical_answer FROM agent_knowledge"
+            " ORDER BY id DESC LIMIT %s",
+            (limit,),
+        ).fetchall()
+    return [{"id": r[0], "question": r[1], "answer": r[2]} for r in rows]

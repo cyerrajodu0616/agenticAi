@@ -19,6 +19,7 @@ SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))
 GRAPHIFY_BASE_URL = os.getenv("GRAPHIFY_BASE_URL", "http://localhost:8080")
 GRAPHIFY_ENABLED = os.getenv("GRAPHIFY_ENABLED", "false").lower() == "true"
 GRAPHIFY_TIMEOUT = float(os.getenv("GRAPHIFY_TIMEOUT", "3"))
+WEB_PORT = int(os.getenv("WEB_PORT", "8765"))
 
 _REQUIRED_CLOUD_KEYS = ("GROQ_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY")
 
