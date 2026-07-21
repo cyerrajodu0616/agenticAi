@@ -1,0 +1,10 @@
+[
+  {"text": "Hi, where can I find the signed eConsent/HIPAA PDF for arcId ARCF25344h646?",
+   "expected_intent": "kb_answer"},
+  {"text": "The application data for ARCF25390h101 didn't sync to the portal, can you re-run the sync?",
+   "expected_intent": "sync_fix"},
+  {"text": "Can you pull a count of applications by product for June and send me a breakdown?",
+   "expected_intent": "analysis_task"},
+  {"text": "Are you joining the 3pm architecture call?",
+   "expected_intent": "escalate"}
+]
