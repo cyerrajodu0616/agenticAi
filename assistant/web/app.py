@@ -20,7 +20,8 @@ from assistant.chat import answer_from_kb, classify_chat, extract_resolution, ex
 from assistant.db.client import init_schema
 from assistant.kb import kb_delete, kb_find, kb_learn, kb_list_recent, kb_update
 from assistant.redact import redact
-from assistant.tasks import get_escalation
+from assistant.review import approve as review_approve, reject as review_reject, show as review_show
+from assistant.tasks import get_escalation, list_open, resolve_escalation
 
 _log = logging.getLogger(__name__)
 
@@ -59,6 +60,18 @@ class TeachConfirmRequest(BaseModel):
 class KbUpdateRequest(BaseModel):
     question: str | None = None
     answer: str | None = None
+
+
+class ApproveRequest(BaseModel):
+    edited_text: str | None = None
+
+
+class DraftResolutionRequest(BaseModel):
+    text: str
+
+
+class ResolveRequest(BaseModel):
+    resolution_text: str
 
 
 @app.post("/api/chat")
@@ -118,6 +131,59 @@ def delete_kb(entry_id: int) -> dict:
     ok = kb_delete(entry_id)
     if not ok:
         raise HTTPException(404, f"KB entry {entry_id} not found")
+    return {"ok": True}
+
+
+def _shape_task_row(row: tuple) -> dict:
+    return {"id": row[0], "sender": row[1], "question": row[2], "created_at": row[3].isoformat()}
+
+
+@app.get("/api/tasks")
+def list_tasks() -> dict:
+    open_items = list_open()
+    return {
+        "escalations": [_shape_task_row(r) for r in open_items["escalations"]],
+        "drafts": [_shape_task_row(r) for r in open_items["drafts"]],
+    }
+
+
+@app.get("/api/review/{item_id}")
+def get_review_item(item_id: int) -> dict:
+    try:
+        return review_show(item_id)
+    except SystemExit:
+        raise HTTPException(404, f"review item {item_id} not found")
+
+
+@app.post("/api/review/{item_id}/approve")
+def approve_review_item(item_id: int, req: ApproveRequest) -> dict:
+    try:
+        return review_approve(item_id, req.edited_text)
+    except SystemExit as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/review/{item_id}/reject")
+def reject_review_item(item_id: int) -> dict:
+    ok = review_reject(item_id)
+    if not ok:
+        raise HTTPException(409, f"review item {item_id} is not pending")
+    return {"ok": True}
+
+
+@app.post("/api/escalation/{esc_id}/draft-resolution")
+def draft_resolution(esc_id: int, req: DraftResolutionRequest) -> dict:
+    esc = get_escalation(esc_id)
+    if esc is None or esc["status"] != "pending":
+        raise HTTPException(404, f"escalation {esc_id} not found or not pending")
+    return {"resolution": extract_resolution(req.text, esc["question_text"])}
+
+
+@app.post("/api/escalation/{esc_id}/resolve")
+def resolve_escalation_endpoint(esc_id: int, req: ResolveRequest) -> dict:
+    ok = resolve_escalation(esc_id, req.resolution_text, resolved_by="web")
+    if not ok:
+        raise HTTPException(409, f"escalation {esc_id} not found or not pending")
     return {"ok": True}
 
 
