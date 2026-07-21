@@ -1,4 +1,5 @@
 """Semantic search over agent_knowledge + product_knowledge, and the learn upsert."""
+from assistant import graphify
 from assistant.db.client import get_connection
 from assistant.models import embedding_model_name, get_embeddings
 
@@ -28,10 +29,13 @@ def kb_search(question: str, limit: int = 3) -> list[dict]:
     """
     with get_connection() as conn:
         rows = conn.execute(sql, (vec, vec, limit)).fetchall()
-    return [
+    local_hits = [
         {"source": r[0], "title": r[1], "content": r[2], "similarity": float(r[3])}
         for r in rows
     ]
+    external_hits = graphify.graphify_search(question, limit=limit)
+    merged = sorted(local_hits + external_hits, key=lambda h: h["similarity"], reverse=True)
+    return merged[:limit]
 
 
 def kb_learn(question: str, answer: str, created_by: str, source_refs: list[str]) -> int:
