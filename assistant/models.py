@@ -1,0 +1,34 @@
+"""Single switch point between cloud (initial setup) and local (4060/Ollama) backends."""
+from langchain.chat_models import init_chat_model
+
+from assistant import config
+
+_ROLES_CLOUD = {
+    "classify": "groq:qwen/qwen3-32b",
+    "compose": "google_genai:gemini-2.5-flash",
+    "coder": "google_genai:gemini-2.5-flash",
+}
+_ROLES_LOCAL = {
+    "classify": "ollama:qwen3:8b",
+    "compose": "ollama:qwen3:8b",
+    "coder": "ollama:qwen2.5-coder:7b",
+}
+
+
+def get_model(role: str):
+    table = _ROLES_CLOUD if config.MODEL_BACKEND == "cloud" else _ROLES_LOCAL
+    if role not in table:
+        raise ValueError(f"unknown role {role!r}; expected one of {sorted(table)}")
+    if config.MODEL_BACKEND == "local":
+        return init_chat_model(table[role], base_url=config.OLLAMA_BASE_URL, temperature=0)
+    return init_chat_model(table[role], temperature=0)
+
+
+def get_embeddings():
+    if config.MODEL_BACKEND == "cloud":
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+        return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    from langchain_ollama import OllamaEmbeddings
+
+    return OllamaEmbeddings(model="nomic-embed-text", base_url=config.OLLAMA_BASE_URL)
