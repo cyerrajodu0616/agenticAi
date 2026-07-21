@@ -76,10 +76,10 @@ def extract_resolution(text: str, escalation_question: str) -> str:
 
 
 def answer_from_kb(text: str) -> str:
-    hits = kb_search(text)
+    redacted, _ = redact(text)
+    hits = kb_search(redacted)
     if not hits:
         return "I don't have anything in the knowledge base about that yet."
-    redacted, _ = redact(text)
     context = "\n\n".join(
         f"[{h['source']}:{redact(h['title'])[0]} sim={h['similarity']:.2f}]\n{redact(h['content'])[0]}"
         for h in hits
