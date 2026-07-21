@@ -188,6 +188,27 @@
   .chat-row { display: flex; gap: 0.5rem; }
   .chat-row input { flex: 1; }
 
+  .import-panel {
+    margin-top: 1.5rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.9rem;
+    background: var(--paper-raised);
+  }
+  .import-panel summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--slate);
+  }
+  .import-panel .import-hint {
+    font-size: 0.78rem;
+    color: var(--slate);
+    margin: 0.5rem 0;
+  }
+  .import-panel input[type=file] { margin-bottom: 0.5rem; display: block; }
+  .import-panel textarea { margin-bottom: 0.5rem; }
+
   /* --- proposal / pending-state card -------------------------------- */
   /* Signature element: a rust-colored left rule + uppercase eyebrow marks
      anything awaiting your confirmation. Settled content never gets this
@@ -315,6 +336,14 @@
         <input type="text" id="chat-input" placeholder="Ask a question, teach a fact, or say what's wrong...">
         <button class="primary" onclick="sendChat()">Send</button>
       </div>
+      <details class="import-panel">
+        <summary>Import a question</summary>
+        <p class="import-hint">Paste a message someone sent you (e.g. from Teams), or choose a file. This is different from the box above — it submits someone else's question, not something you're asking.</p>
+        <input type="file" id="import-file" accept=".txt,.md">
+        <textarea id="import-text" placeholder="...or paste the message text here" rows="3"></textarea>
+        <button class="primary" onclick="runImport()">Run</button>
+        <div id="import-result"></div>
+      </details>
     </section>
 
     <section id="tab-kb" class="tab">
@@ -424,6 +453,39 @@ async function sendChat() {
     }
   } catch (e) {
     logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
+  }
+}
+
+async function runImport() {
+  const fileInput = document.getElementById('import-file');
+  const textArea = document.getElementById('import-text');
+  const resultDiv = document.getElementById('import-result');
+  resultDiv.innerHTML = '';
+
+  let text;
+  if (fileInput.files.length) {
+    text = await fileInput.files[0].text();
+  } else {
+    text = textArea.value.trim();
+  }
+  if (!text) {
+    resultDiv.innerHTML = '<span class="error">Choose a file or paste some text first.</span>';
+    return;
+  }
+
+  try {
+    const data = await api('POST', '/api/ingest', {text});
+    let label;
+    if (data.status === 'duplicate') label = 'Already processed before.';
+    else if (data.status === 'escalated') label = `Escalated — check Tasks (#${data.escalation_id}).`;
+    else label = `Drafted a reply — check Tasks (#${data.review_item_id}).`;
+    resultDiv.innerHTML = `<div class="settled">${esc(label)}</div>`;
+    fileInput.value = '';
+    textArea.value = '';
+    _lastTasksJson = '';
+    loadTasks();
+  } catch (e) {
+    resultDiv.innerHTML = '<span class="error">' + esc(e.message) + '</span>';
   }
 }
 

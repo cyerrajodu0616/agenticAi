@@ -18,6 +18,7 @@ from starlette.requests import Request
 from assistant import config
 from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
 from assistant.db.client import init_schema
+from assistant.ingest import ingest_text
 from assistant.kb import kb_delete, kb_find, kb_learn, kb_list_recent, kb_update
 from assistant.redact import redact
 from assistant.review import approve as review_approve, reject as review_reject, show as review_show
@@ -72,6 +73,10 @@ class DraftResolutionRequest(BaseModel):
 
 class ResolveRequest(BaseModel):
     resolution_text: str
+
+
+class IngestRequest(BaseModel):
+    text: str
 
 
 @app.post("/api/chat")
@@ -200,6 +205,13 @@ def resolve_escalation_endpoint(esc_id: int, req: ResolveRequest) -> dict:
     if not ok:
         raise HTTPException(409, f"escalation {esc_id} not found or not pending")
     return {"ok": True}
+
+
+@app.post("/api/ingest")
+def ingest_endpoint(req: IngestRequest) -> dict:
+    if not req.text.strip():
+        raise HTTPException(400, "no text provided")
+    return ingest_text(req.text)
 
 
 @app.get("/")
