@@ -37,7 +37,7 @@ Entry point: `python -m assistant.web` starts uvicorn on `127.0.0.1:${WEB_PORT}`
 | GET | `/api/review/{id}` | → `review.show(id)` |
 | POST | `/api/review/{id}/approve` | `{edited_text?}` → `review.approve` |
 | POST | `/api/review/{id}/reject` | → `review.reject` |
-| GET | `/api/escalation/{id}/draft-resolution` | `{text}` (query or body) → `extract_resolution(text, escalation.question_text)`, read-only |
+| POST | `/api/escalation/{id}/draft-resolution` | `{text}` (body — free text doesn't belong in a query string) → `extract_resolution(text, escalation.question_text)`, read-only despite the verb |
 | POST | `/api/escalation/{id}/resolve` | `{resolution_text}` → `resolve_escalation(id, resolution_text, resolved_by="web")` |
 | GET | `/` | serves `static/index.html` |
 
