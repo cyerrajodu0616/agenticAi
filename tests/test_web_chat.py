@@ -95,7 +95,10 @@ def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     def _boom(text):
         raise ValueError("boom")
 
-    monkeypatch.setattr(web_app, "classify_chat", _boom)
+    # classify_chat failures are now recovered from (see test below), so exercise
+    # the generic unhandled-exception handler via a different, unprotected call.
+    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("ask"))
+    monkeypatch.setattr(web_app, "answer_from_kb", _boom)
     # raise_server_exceptions=False: let the app's own exception handler produce
     # the response instead of the test client re-raising the original exception.
     no_raise_client = TestClient(web_app.app, raise_server_exceptions=False)
@@ -104,6 +107,25 @@ def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     body = resp.json()
     assert body == {"error": "internal server error"}
     assert "boom" not in body["error"]  # exception detail must not reach the client
+
+
+def test_chat_classify_failure_returns_friendly_message(client, monkeypatch):
+    """Groq's structured-output quirk (literal "None" instead of null for
+    ChatIntent.ref_id) makes classify_chat raise sometimes — chat_endpoint must
+    recover the same way assistant.chat.run_repl already does, instead of a 500.
+    """
+    import assistant.web.app as web_app
+
+    def _boom(text):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(web_app, "classify_chat", _boom)
+    resp = client.post("/api/chat", json={"text": "some ask-type question"})
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "action": "other",
+        "message": "Sorry, I couldn't understand that — try rephrasing.",
+    }
 
 
 def test_teach_confirm_writes(client, monkeypatch):

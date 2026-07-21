@@ -76,7 +76,10 @@ class ResolveRequest(BaseModel):
 
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest) -> dict:
-    intent = classify_chat(req.text)
+    try:
+        intent = classify_chat(req.text)
+    except Exception:
+        return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
     if intent.action == "ask":
         return {"action": "ask", "answer": answer_from_kb(req.text)}
     if intent.action == "teach":
