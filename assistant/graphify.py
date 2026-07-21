@@ -12,12 +12,14 @@ Start it: bash /Users/ycaffdevice/dev/Graphify-ArcCode/run_local_poc.sh
 (needs `az login` and a personal OPENAI_API_KEY in that shell — see the script).
 """
 import json
+import logging
 import urllib.error
 import urllib.request
 
 from assistant import config
 
 _DIRECT_ANSWER_SIMILARITY = 0.85  # fixed confidence for curated helpdesk-reference matches
+_log = logging.getLogger(__name__)
 
 
 def _post_json(path: str, payload: dict) -> dict | None:
@@ -30,7 +32,11 @@ def _post_json(path: str, payload: dict) -> dict | None:
         )
         with urllib.request.urlopen(req, timeout=config.GRAPHIFY_TIMEOUT) as resp:
             return json.loads(resp.read())
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        # Silent by design (this is an optional, additive source) but not invisible:
+        # logging is off by default, so `logging.basicConfig(level=logging.DEBUG)`
+        # surfaces persistent failures (e.g. Graphify misconfigured, not just "off").
+        _log.debug("Graphify request to %s failed: %s", path, e)
         return None
 
 

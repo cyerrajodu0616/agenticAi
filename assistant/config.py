@@ -17,7 +17,7 @@ SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))
 # Optional external knowledge source: the arcCenter Config Resolution Engine (Graphify).
 # Start it separately (needs Azure CLI login): bash <Graphify repo>/run_local_poc.sh
 GRAPHIFY_BASE_URL = os.getenv("GRAPHIFY_BASE_URL", "http://localhost:8080")
-GRAPHIFY_ENABLED = os.getenv("GRAPHIFY_ENABLED", "true").lower() != "false"
+GRAPHIFY_ENABLED = os.getenv("GRAPHIFY_ENABLED", "false").lower() == "true"
 GRAPHIFY_TIMEOUT = float(os.getenv("GRAPHIFY_TIMEOUT", "3"))
 
 _REQUIRED_CLOUD_KEYS = ("GROQ_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY")
