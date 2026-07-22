@@ -76,6 +76,7 @@ def test_semantic_match_truncates_and_ranks_by_similarity(monkeypatch):
     import assistant.graphify as graphify
 
     monkeypatch.setattr(graphify.config, "GRAPHIFY_ENABLED", True)
+    monkeypatch.setattr(graphify.config, "MODEL_BACKEND", "cloud")
     monkeypatch.setattr(graphify.config, "EMBED_DIM", 2)
     monkeypatch.setattr(graphify, "_embed", lambda text: [1.0, 0.0])
     conn = _FakeConn([
@@ -118,3 +119,61 @@ def test_query_failure_returns_empty(monkeypatch):
 
     monkeypatch.setattr(graphify.arc_config_db, "get_connection", lambda: _BoomConn())
     assert graphify.graphify_search("anything") == []
+
+
+def test_local_backend_skips_semantic_degrading_to_exact_match_only(monkeypatch):
+    """Under MODEL_BACKEND='local', semantic path is skipped (different embedding model
+    family); search degrades to exact-match-only. Exact matches still work normally.
+    """
+    import assistant.graphify as graphify
+
+    monkeypatch.setattr(graphify.config, "GRAPHIFY_ENABLED", True)
+    monkeypatch.setattr(graphify.config, "MODEL_BACKEND", "local")
+    # _embed would never be called for semantic path when MODEL_BACKEND != "cloud"
+    embed_call_count = []
+    monkeypatch.setattr(
+        graphify, "_embed", lambda text: embed_call_count.append(1) or [1.0, 0.0]
+    )
+
+    # Setup: exact match returns one result, semantic would return something else
+    conn = _FakeConn([
+        [("function", "614004", "rateCalc", "Calculates the rate for product 614004.")],
+        # Semantic path would fetch candidates, but it should not be called
+    ])
+    monkeypatch.setattr(graphify.arc_config_db, "get_connection", lambda: conn)
+
+    hits = graphify.graphify_search("how is the rate for product 614004 calculated")
+
+    # Should have exact match
+    assert len(hits) == 1
+    assert hits[0]["title"] == "function:rateCalc"
+
+    # _embed should NOT have been called at all (semantic path was skipped)
+    assert embed_call_count == []
+    assert conn.closed
+
+
+def test_cloud_backend_runs_semantic_path(monkeypatch):
+    """Under MODEL_BACKEND='cloud', semantic path should run normally."""
+    import assistant.graphify as graphify
+
+    monkeypatch.setattr(graphify.config, "GRAPHIFY_ENABLED", True)
+    monkeypatch.setattr(graphify.config, "MODEL_BACKEND", "cloud")
+    monkeypatch.setattr(graphify.config, "EMBED_DIM", 2)
+    monkeypatch.setattr(graphify, "_embed", lambda text: [1.0, 0.0])
+
+    conn = _FakeConn([
+        [],  # No exact matches
+        [
+            ("function", "C1094", "resolveConsentPdf",
+             "resolves the consent PDF S3 key", _FakeVector([1.0, 0.0, 0.0])),
+        ],
+    ])
+    monkeypatch.setattr(graphify.arc_config_db, "get_connection", lambda: conn)
+
+    hits = graphify.graphify_search("where is the eConsent PDF?")
+
+    # Should have semantic match (cloud backend)
+    assert len(hits) >= 1
+    assert hits[0]["title"] == "function:resolveConsentPdf"
+    assert conn.closed

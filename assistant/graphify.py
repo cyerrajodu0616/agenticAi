@@ -17,6 +17,13 @@ Two lookup paths, merged and sorted by similarity:
     this model family (Matryoshka-trained). See docs/superpowers/specs/
     2026-07-22-graphify-live-integration-design.md for why this doesn't need a schema
     migration on either side.
+
+IMPORTANT: The semantic-match path only runs when config.MODEL_BACKEND == "cloud" (i.e.,
+when the query embedder is text-embedding-3-small). Under MODEL_BACKEND == "local"
+(e.g., ollama nomic-embed-text), the semantic path is skipped entirely and search falls
+back to exact-match-only results, since comparing vectors from different model families
+would produce meaningless similarity scores. See "Embedding compatibility" in the design
+spec for details.
 """
 import logging
 import math
@@ -81,6 +88,13 @@ def _build_or_tsquery(question: str) -> str:
 
 
 def _semantic_matches(conn, question: str, limit: int) -> list[dict]:
+    # Semantic matching only works when the query embedder is from the same model family
+    # as Graphify's stored embeddings (text-embedding-3-small). Local backends like
+    # Ollama use different models; comparing across model families produces noise, not
+    # meaningful similarity. Skip semantic path entirely under local backends.
+    if config.MODEL_BACKEND != "cloud":
+        return []
+
     or_query = _build_or_tsquery(question)
     if not or_query:
         return []
