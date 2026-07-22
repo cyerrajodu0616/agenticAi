@@ -27,6 +27,12 @@ Two lookup paths, merged and sorted by similarity:
     question ("how is applicantAge generated in 614004"): without this weighting the
     producing function (F0100) ranked 1840th of 2218 matches; with it, 1st.
 
+Function-type hits get a "[Triggered for products: ...]" suffix appended to their content,
+sourced from arc_config_kb.trigger_entries -- a function's kb_embeddings.content never
+says which product(s) actually invoke it, so without this a question like "does F0100
+run for product 614004" can't be confirmed from the retrieved snippet text alone. Done
+once, after hits are narrowed to the final `limit` (not per-candidate).
+
 IMPORTANT: The semantic-match path only runs when config.MODEL_BACKEND == "cloud" (i.e.,
 when the query embedder is text-embedding-3-small). Under MODEL_BACKEND == "local"
 (e.g., ollama nomic-embed-text), the semantic path is skipped entirely and search falls
@@ -79,6 +85,8 @@ def _exact_matches(conn, question: str, limit: int) -> list[dict]:
             "title": f"{r[0]}:{r[2] or r[1]}",
             "content": r[3],
             "similarity": _EXACT_MATCH_SIMILARITY,
+            "_entity_type": r[0],
+            "_entity_id": r[1],
         }
         for r in rows
     ]
@@ -136,10 +144,38 @@ def _semantic_matches(conn, question: str, limit: int) -> list[dict]:
                 "title": f"{entity_type}:{label or entity_id}",
                 "content": content,
                 "similarity": similarity,
+                "_entity_type": entity_type,
+                "_entity_id": entity_id,
             }
         )
     scored.sort(key=lambda h: h["similarity"], reverse=True)
     return scored[:limit]
+
+
+def _attach_product_context(conn, hits: list[dict]) -> None:
+    """Append which products actually trigger a function hit's content, e.g.
+    "[Triggered for products: 614004]" -- kb_embeddings.content for a function never
+    says which product(s) invoke it (that link lives in trigger_entries), so without
+    this a question like "how is X generated for product 614004" retrieves the right
+    function but the answer can't confirm the product link and has to hedge. Runs once,
+    after hits are already narrowed to the final `limit`, not on every candidate."""
+    function_ids = [h["_entity_id"] for h in hits if h.get("_entity_type") == "function"]
+    if not function_ids:
+        return
+    rows = conn.execute(
+        """
+        SELECT function_id, array_agg(DISTINCT product_id ORDER BY product_id) AS product_ids
+        FROM arc_config_kb.trigger_entries
+        WHERE function_id = ANY(%(function_ids)s)
+        GROUP BY function_id
+        """,
+        {"function_ids": function_ids},
+    ).fetchall()
+    products_by_function = {r[0]: r[1] for r in rows}
+    for h in hits:
+        products = products_by_function.get(h.get("_entity_id"))
+        if products:
+            h["content"] = f"{h['content']} [Triggered for products: {', '.join(products)}]"
 
 
 def graphify_search(question: str, limit: int = 3) -> list[dict]:
@@ -151,6 +187,9 @@ def graphify_search(question: str, limit: int = 3) -> list[dict]:
         return []
     try:
         hits = _exact_matches(conn, question, limit) + _semantic_matches(conn, question, limit)
+        hits.sort(key=lambda h: h["similarity"], reverse=True)
+        hits = hits[:limit]
+        _attach_product_context(conn, hits)
     except Exception as e:
         _log.debug("Graphify query failed: %s", e)
         return []
@@ -159,5 +198,7 @@ def graphify_search(question: str, limit: int = 3) -> list[dict]:
             conn.close()
         except Exception as e:
             _log.debug("Failed to close Graphify connection: %s", e)
-    hits.sort(key=lambda h: h["similarity"], reverse=True)
-    return hits[:limit]
+    for h in hits:
+        h.pop("_entity_type", None)
+        h.pop("_entity_id", None)
+    return hits
