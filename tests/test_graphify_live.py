@@ -3,7 +3,10 @@
 Skipped by default -- pytest.ini's addopts excludes `integration`-marked tests; run
 explicitly with: pytest -m integration tests/test_graphify_live.py
 """
+from dotenv import load_dotenv
 import pytest
+
+load_dotenv()
 
 pytestmark = pytest.mark.integration
 
