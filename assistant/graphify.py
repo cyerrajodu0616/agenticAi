@@ -68,7 +68,22 @@ def _exact_matches(conn, question: str, limit: int) -> list[dict]:
     ]
 
 
+def _build_or_tsquery(question: str) -> str:
+    """Extract significant words (len >= 2) and join with OR operator.
+
+    Returns the OR-joined query string, e.g. "how | is | the | rate | for | product | 614004 | calculated".
+    Postgres's to_tsquery('english', ...) will apply stemming and drop stopwords like "how"/"is"/"the".
+    Returns empty string if no words are extracted (caller handles the short-circuit).
+    """
+    words = re.findall(r"[A-Za-z0-9]+", question.lower())
+    significant_words = [w for w in words if len(w) >= 2]
+    return " | ".join(significant_words)
+
+
 def _semantic_matches(conn, question: str, limit: int) -> list[dict]:
+    or_query = _build_or_tsquery(question)
+    if not or_query:
+        return []
     query_vec = _embed(question)
     # Normalize query vector to unit L2 norm for true cosine similarity
     query_vec = _truncate_and_normalize(query_vec, len(query_vec))
@@ -77,11 +92,11 @@ def _semantic_matches(conn, question: str, limit: int) -> list[dict]:
         SELECT entity_type, entity_id, label, content, embedding
         FROM arc_config_kb.kb_embeddings
         WHERE embedding IS NOT NULL
-          AND to_tsvector('english', content) @@ plainto_tsquery('english', %(q)s)
-        ORDER BY ts_rank(to_tsvector('english', content), plainto_tsquery('english', %(q)s)) DESC
+          AND to_tsvector('english', content) @@ to_tsquery('english', %(q)s)
+        ORDER BY ts_rank(to_tsvector('english', content), to_tsquery('english', %(q)s)) DESC
         LIMIT %(cand_limit)s
         """,
-        {"q": question, "cand_limit": _SEMANTIC_CANDIDATE_LIMIT},
+        {"q": or_query, "cand_limit": _SEMANTIC_CANDIDATE_LIMIT},
     ).fetchall()
     scored = []
     for entity_type, entity_id, label, content, embedding in candidates:
