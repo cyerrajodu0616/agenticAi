@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://assistant:assistant@localhost:5433/assistant"
 )
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 
 # Optional external knowledge source: the arcCenter Config Resolution Engine (Graphify).
 # Start it separately (needs Azure CLI login): bash <Graphify repo>/run_local_poc.sh
