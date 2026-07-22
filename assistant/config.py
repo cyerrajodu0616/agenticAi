@@ -14,11 +14,14 @@ DATABASE_URL = os.getenv(
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 
-# Optional external knowledge source: the arcCenter Config Resolution Engine (Graphify).
-# Start it separately (needs Azure CLI login): bash <Graphify repo>/run_local_poc.sh
-GRAPHIFY_BASE_URL = os.getenv("GRAPHIFY_BASE_URL", "http://localhost:8080")
+# Optional external knowledge source: the arcCenter Config Resolution Engine
+# ("Graphify") -- live read-only SQL query against its arc_config_kb schema on
+# the arcCenter dev Postgres server. See assistant/arc_config_db.py for the
+# credential-resolution chain.
 GRAPHIFY_ENABLED = os.getenv("GRAPHIFY_ENABLED", "false").lower() == "true"
-GRAPHIFY_TIMEOUT = float(os.getenv("GRAPHIFY_TIMEOUT", "3"))
+GRAPHIFY_TIMEOUT = float(os.getenv("GRAPHIFY_TIMEOUT", "5"))
+ARC_CONFIG_KB_DSN = os.getenv("ARC_CONFIG_KB_DSN", "")
+ARC_CONFIG_KB_ENV = os.getenv("ARC_CONFIG_KB_ENV", "dev")
 WEB_PORT = int(os.getenv("WEB_PORT", "8765"))
 
 _REQUIRED_CLOUD_KEYS = ("GROQ_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY")
