@@ -58,10 +58,11 @@ CREATE TABLE IF NOT EXISTS raw_documents (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- The single approval gate: replies, actions, and scripts all wait here.
+-- The single approval gate: replies, actions, scripts, and peer-submitted KB
+-- entries all wait here.
 CREATE TABLE IF NOT EXISTS review_items (
     id BIGSERIAL PRIMARY KEY,
-    kind TEXT NOT NULL CHECK (kind IN ('reply','action','script')),
+    kind TEXT NOT NULL CHECK (kind IN ('reply','action','script','kb_entry')),
     payload JSONB NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending','approved','rejected')),
@@ -69,3 +70,8 @@ CREATE TABLE IF NOT EXISTS review_items (
     created_at TIMESTAMPTZ DEFAULT now(),
     resolved_at TIMESTAMPTZ
 );
+
+-- Migration for installs that predate 'kb_entry' (idempotent: safe to re-run).
+ALTER TABLE review_items DROP CONSTRAINT IF EXISTS review_items_kind_check;
+ALTER TABLE review_items ADD CONSTRAINT review_items_kind_check
+    CHECK (kind IN ('reply','action','script','kb_entry'));

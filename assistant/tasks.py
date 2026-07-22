@@ -11,9 +11,19 @@ def list_open() -> dict:
         ).fetchall()
         drafts = conn.execute(
             "SELECT id, payload->>'sender', left(payload->>'question', 80), created_at"
-            " FROM review_items WHERE status='pending' ORDER BY id"
+            " FROM review_items WHERE status='pending' AND kind='reply' ORDER BY id"
         ).fetchall()
-    return {"escalations": escalations, "drafts": drafts}
+        # Peer-submitted KB entries (gated in app.py's /api/teach/confirm) — full
+        # question/answer, not truncated, since approving requires reading both in full.
+        pending_kb_entries = conn.execute(
+            "SELECT id, payload->>'question', payload->>'answer', created_at"
+            " FROM review_items WHERE status='pending' AND kind='kb_entry' ORDER BY id"
+        ).fetchall()
+    return {
+        "escalations": escalations,
+        "drafts": drafts,
+        "pending_kb_entries": pending_kb_entries,
+    }
 
 
 def get_escalation(esc_id: int) -> dict | None:

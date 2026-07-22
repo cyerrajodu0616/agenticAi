@@ -1,4 +1,6 @@
 """Semantic search over agent_knowledge + product_knowledge, and the learn upsert."""
+import json
+
 from assistant import graphify
 from assistant.db.client import get_connection
 from assistant.models import embedding_model_name, get_embeddings
@@ -50,6 +52,19 @@ def kb_learn(question: str, answer: str, created_by: str, source_refs: list[str]
             RETURNING id
             """,
             (question, answer, vec, embedding_model_name(), source_refs, created_by),
+        ).fetchone()
+    return row[0]
+
+
+def kb_learn_pending(question: str, answer: str) -> int:
+    """Queue a peer-submitted Q&A pair for local-user approval instead of writing it
+    to agent_knowledge directly — no embedding call here; that only happens if/when
+    review.approve() calls kb_learn() for real. See assistant/web/app.py's
+    /api/teach/confirm for the local-vs-peer gate that routes here."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "INSERT INTO review_items (kind, payload) VALUES ('kb_entry', %s) RETURNING id",
+            (json.dumps({"question": question, "answer": answer}),),
         ).fetchone()
     return row[0]
 

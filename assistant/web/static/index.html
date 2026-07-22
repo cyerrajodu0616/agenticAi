@@ -376,6 +376,9 @@
       <div id="escalations-list"></div>
       <h3 class="subhead">Drafts</h3>
       <div id="drafts-list"></div>
+      <h3 class="subhead">Knowledge submitted by a peer</h3>
+      <p class="import-hint">Anything taught through the shared link waits here — it's not in the knowledge base until you approve it.</p>
+      <div id="pending-kb-list"></div>
     </section>
   </main>
 </div>
@@ -517,11 +520,17 @@ async function runDirectTeach() {
   }
 
   try {
-    await api('POST', '/api/teach/confirm', {question, answer});
-    resultDiv.innerHTML = '<div class="settled">Learned.</div>';
+    const data = await api('POST', '/api/teach/confirm', {question, answer});
+    if (data.status === 'pending_approval') {
+      resultDiv.innerHTML = '<div class="settled">Submitted — waiting on local approval before it joins the knowledge base.</div>';
+    } else {
+      resultDiv.innerHTML = '<div class="settled">Learned.</div>';
+    }
     questionInput.value = '';
     answerArea.value = '';
     if (document.getElementById('tab-kb').classList.contains('active')) loadKb();
+    _lastTasksJson = '';
+    loadTasks();
   } catch (e) {
     resultDiv.innerHTML = '<span class="error">' + esc(e.message) + '</span>';
   }
@@ -536,8 +545,13 @@ function discardProposal(elId) {
 async function confirmTeach(elId) {
   const p = _pendingProposals[elId];
   try {
-    await api('POST', '/api/teach/confirm', {question: p.question, answer: p.answer});
-    document.getElementById(elId).outerHTML = '<div class="settled">Learned.</div>';
+    const data = await api('POST', '/api/teach/confirm', {question: p.question, answer: p.answer});
+    const label = data.status === 'pending_approval'
+      ? 'Submitted — waiting on local approval before it joins the knowledge base.'
+      : 'Learned.';
+    document.getElementById(elId).outerHTML = `<div class="settled">${esc(label)}</div>`;
+    _lastTasksJson = '';
+    loadTasks();
   } catch (e) {
     logMsg('bot', '<span class="error">' + esc(e.message) + '</span>');
   } finally {
@@ -607,7 +621,7 @@ let _lastTasksJson = '';
 async function loadTasks() {
   const data = await api('GET', '/api/tasks');
 
-  const total = data.escalations.length + data.drafts.length;
+  const total = data.escalations.length + data.drafts.length + data.pending_kb_entries.length;
   const badge = document.getElementById('tasks-badge');
   badge.textContent = total;
   badge.hidden = total === 0;
@@ -642,6 +656,39 @@ async function loadTasks() {
       <button onclick="rejectDraft(${d.id})">Reject</button>
       <div id="draft-detail-${d.id}"></div>`;
     draftsDiv.appendChild(div);
+  }
+
+  const pendingKbDiv = document.getElementById('pending-kb-list');
+  pendingKbDiv.innerHTML = data.pending_kb_entries.length ? '' : '<p class="empty">None pending.</p>';
+  for (const k of data.pending_kb_entries) {
+    const div = document.createElement('div');
+    div.className = 'proposal';
+    div.innerHTML = `
+      <div class="eyebrow">Pending approval</div>
+      <div><b>Q:</b> ${esc(k.question)}<br><b>A:</b> ${esc(k.answer)}</div>
+      <button class="primary" onclick="approveKbEntry(${k.id})">Approve</button>
+      <button onclick="rejectKbEntry(${k.id})">Reject</button>`;
+    pendingKbDiv.appendChild(div);
+  }
+}
+
+async function approveKbEntry(id) {
+  try {
+    await api('POST', `/api/review/${id}/approve`, {});
+    _lastTasksJson = '';
+    loadTasks();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function rejectKbEntry(id) {
+  try {
+    await api('POST', `/api/review/${id}/reject`, {});
+    _lastTasksJson = '';
+    loadTasks();
+  } catch (e) {
+    alert(e.message);
   }
 }
 

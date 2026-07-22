@@ -19,7 +19,7 @@ from assistant import config
 from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
 from assistant.db.client import init_schema
 from assistant.ingest import ingest_text
-from assistant.kb import kb_delete, kb_find, kb_learn, kb_list_recent, kb_update
+from assistant.kb import kb_delete, kb_find, kb_learn, kb_learn_pending, kb_list_recent, kb_update
 from assistant.redact import redact
 from assistant.review import approve as review_approve, reject as review_reject, show as review_show
 from assistant.tasks import get_escalation, list_open, resolve_escalation
@@ -122,12 +122,28 @@ def chat_endpoint(req: ChatRequest) -> dict:
     return {"action": "other", "message": intent.reasoning}
 
 
+def _is_local_request(request: Request) -> bool:
+    """True only if the request reached this server directly on localhost, not via
+    ngrok or any other forwarding proxy. Verified empirically (2026-07-21): ngrok
+    passes through the original Host header (the tunnel's public subdomain) rather
+    than rewriting it to localhost, so this is a reliable signal in practice — not a
+    substitute for real auth, just consistent with this app's existing trust model
+    (127.0.0.1 binding + whatever gate a tunnel adds in front of it)."""
+    host = request.headers.get("host", "")
+    return host.split(":")[0] in ("127.0.0.1", "localhost")
+
+
 @app.post("/api/teach/confirm")
-def teach_confirm(req: TeachConfirmRequest) -> dict:
-    new_id = kb_learn(
-        question=req.question, answer=req.answer, created_by="web", source_refs=["web"]
-    )
-    return {"id": new_id}
+def teach_confirm(req: TeachConfirmRequest, request: Request) -> dict:
+    if _is_local_request(request):
+        new_id = kb_learn(
+            question=req.question, answer=req.answer, created_by="web", source_refs=["web"]
+        )
+        return {"status": "learned", "id": new_id}
+    # Peer-submitted (reached us through ngrok or similar): gate behind local-user
+    # approval instead of writing to agent_knowledge directly.
+    new_id = kb_learn_pending(question=req.question, answer=req.answer)
+    return {"status": "pending_approval", "id": new_id}
 
 
 @app.get("/api/kb")
@@ -156,12 +172,19 @@ def _shape_task_row(row: tuple) -> dict:
     return {"id": row[0], "sender": row[1], "question": row[2], "created_at": row[3].isoformat()}
 
 
+def _shape_kb_entry_row(row: tuple) -> dict:
+    return {"id": row[0], "question": row[1], "answer": row[2], "created_at": row[3].isoformat()}
+
+
 @app.get("/api/tasks")
 def list_tasks() -> dict:
     open_items = list_open()
     return {
         "escalations": [_shape_task_row(r) for r in open_items["escalations"]],
         "drafts": [_shape_task_row(r) for r in open_items["drafts"]],
+        "pending_kb_entries": [
+            _shape_kb_entry_row(r) for r in open_items["pending_kb_entries"]
+        ],
     }
 
 

@@ -46,21 +46,36 @@ def approve(item_id: int, edited_text: str | None = None) -> dict:
     if item["status"] != "pending":
         raise SystemExit(f"item {item_id} is already {item['status']}")
     payload = item["payload"]
-    final_text = edited_text if edited_text is not None else payload["draft"]
-    if item["kind"] == "reply":
+    kind = item["kind"]
+
+    if kind == "kb_entry":
+        # Peer-submitted KB entry (gated in app.py's /api/teach/confirm — anything not
+        # coming from localhost lands here instead of writing to agent_knowledge
+        # directly). Approving is what actually calls kb_learn.
+        final_text = edited_text if edited_text is not None else payload["answer"]
         kb_learn(
             question=payload["question"],
             answer=final_text,
-            created_by="review-cli",
+            created_by="peer-approved",
             source_refs=[f"review_item:{item_id}"],
         )
+    else:
+        final_text = edited_text if edited_text is not None else payload["draft"]
+        if kind == "reply":
+            kb_learn(
+                question=payload["question"],
+                answer=final_text,
+                created_by="review-cli",
+                source_refs=[f"review_item:{item_id}"],
+            )
+
     with get_connection() as conn:
         conn.execute(
             "UPDATE review_items SET status='approved',"
             " resolution=%s, resolved_at=now() WHERE id=%s",
             (json.dumps({"final_text": final_text}), item_id),
         )
-    if item["kind"] == "reply":
+    if kind == "reply":
         _to_clipboard(final_text)
     return {"final_text": final_text}
 
@@ -105,9 +120,13 @@ def main() -> None:
         print(json.dumps(item["payload"], indent=2))
     elif args.cmd == "approve":
         item = show(args.id)
-        edited = _edit_in_editor(item["payload"]["draft"]) if args.edit else None
+        text_key = "answer" if item["kind"] == "kb_entry" else "draft"
+        edited = _edit_in_editor(item["payload"][text_key]) if args.edit else None
         result = approve(args.id, edited)
-        print("approved — final text copied to clipboard:\n")
+        if item["kind"] == "reply":
+            print("approved — final text copied to clipboard:\n")
+        else:
+            print("approved:\n")
         print(result["final_text"])
     elif args.cmd == "reject":
         if reject(args.id):

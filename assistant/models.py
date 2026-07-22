@@ -4,6 +4,11 @@ from langchain.chat_models import init_chat_model
 from assistant import config
 
 _ROLES_CLOUD = {
+    # classify stays on Groq deliberately: Gemini's free tier caps gemini-2.5-flash at
+    # 20 requests/DAY per project, and compose/coder already share that same quota --
+    # putting classify there too exhausts it almost immediately (confirmed live,
+    # 2026-07-21: hit RESOURCE_EXHAUSTED mid-testing). Groq's own flakiness is
+    # mitigated by .with_retry() on every call site instead.
     "classify": "groq:qwen/qwen3.6-27b",
     "compose": "google_genai:gemini-2.5-flash",
     "coder": "google_genai:gemini-2.5-flash",

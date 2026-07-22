@@ -103,7 +103,8 @@ def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     # the response instead of the test client re-raising the original exception.
     no_raise_client = TestClient(web_app.app, raise_server_exceptions=False)
     resp = no_raise_client.post(
-        "/api/teach/confirm", json={"question": "Q?", "answer": "A"}
+        "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
+        headers={"host": "127.0.0.1:8765"},  # local -> hits kb_learn, not the peer gate
     )
     assert resp.status_code == 500
     body = resp.json()
@@ -184,16 +185,41 @@ def test_chat_resolve_extraction_failure_returns_friendly_message(client, monkey
     }
 
 
-def test_teach_confirm_writes(client, monkeypatch):
+def test_teach_confirm_writes_directly_when_local(client, monkeypatch):
     import assistant.web.app as web_app
 
     captured = {}
     monkeypatch.setattr(
         web_app, "kb_learn", lambda **kw: captured.update(kw) or 42
     )
-    resp = client.post("/api/teach/confirm", json={"question": "Q?", "answer": "A"})
+    resp = client.post(
+        "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
+        headers={"host": "127.0.0.1:8765"},
+    )
     assert resp.status_code == 200
-    assert resp.json() == {"id": 42}
+    assert resp.json() == {"status": "learned", "id": 42}
     assert captured["question"] == "Q?"
     assert captured["answer"] == "A"
     assert captured["created_by"] == "web"
+
+
+def test_teach_confirm_gated_when_not_local(client, monkeypatch):
+    """A request whose Host header isn't 127.0.0.1/localhost (e.g. arrived via ngrok)
+    must NOT write to agent_knowledge directly -- it queues for approval instead."""
+    import assistant.web.app as web_app
+
+    monkeypatch.setattr(
+        web_app, "kb_learn", lambda **kw: pytest.fail("kb_learn must not be called for a peer request")
+    )
+    captured = {}
+    monkeypatch.setattr(
+        web_app, "kb_learn_pending",
+        lambda question, answer: captured.update(question=question, answer=answer) or 7,
+    )
+    resp = client.post(
+        "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
+        headers={"host": "3bbc-abc123.ngrok-free.app"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "pending_approval", "id": 7}
+    assert captured == {"question": "Q?", "answer": "A"}

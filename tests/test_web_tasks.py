@@ -20,6 +20,7 @@ def test_list_tasks_shapes_tuples_to_dicts(client, monkeypatch):
         lambda: {
             "escalations": [(1, "peer@corp.com", "How rerun sync?", now)],
             "drafts": [(2, "peer@corp.com", "Where's the PDF?", now)],
+            "pending_kb_entries": [(3, "What are the product ids?", "4127, 511801", now)],
         },
     )
     resp = client.get("/api/tasks")
@@ -30,6 +31,10 @@ def test_list_tasks_shapes_tuples_to_dicts(client, monkeypatch):
          "created_at": now.isoformat()}
     ]
     assert body["drafts"][0]["id"] == 2
+    assert body["pending_kb_entries"] == [
+        {"id": 3, "question": "What are the product ids?", "answer": "4127, 511801",
+         "created_at": now.isoformat()}
+    ]
 
 
 def test_review_show_missing_returns_404(client, monkeypatch):
