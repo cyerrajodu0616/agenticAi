@@ -37,7 +37,11 @@ class TeachPair(BaseModel):
 
 def classify_chat(text: str) -> ChatIntent:
     redacted, _ = redact(text)
-    llm = get_model("classify").with_structured_output(ChatIntent)
+    # Groq's structured output occasionally fails a tool call outright (empirically ~1
+    # in 5); most instances are transient, not a deterministic per-input failure, so a
+    # couple of quick retries clear the majority. Falls through to the caller's own
+    # graceful-degradation handling if all attempts fail.
+    llm = get_model("classify").with_structured_output(ChatIntent).with_retry(stop_after_attempt=3)
     return llm.invoke(
         [
             ("system", "Classify the user's chat message for a personal-assistant REPL."),
@@ -48,7 +52,7 @@ def classify_chat(text: str) -> ChatIntent:
 
 def extract_teach_pair(text: str) -> TeachPair:
     redacted, _ = redact(text)
-    llm = get_model("classify").with_structured_output(TeachPair)
+    llm = get_model("classify").with_structured_output(TeachPair).with_retry(stop_after_attempt=3)
     return llm.invoke(
         [
             (
@@ -64,7 +68,7 @@ def extract_teach_pair(text: str) -> TeachPair:
 def extract_resolution(text: str, escalation_question: str) -> str:
     redacted, _ = redact(text)
     red_q, _ = redact(escalation_question)
-    llm = get_model("compose")
+    llm = get_model("compose").with_retry(stop_after_attempt=3)
     result = llm.invoke(
         [
             (
@@ -88,7 +92,7 @@ def answer_from_kb(text: str) -> str:
         f"[{h['source']}:{redact(h['title'])[0]} sim={h['similarity']:.2f}]\n{redact(h['content'])[0]}"
         for h in hits
     )
-    llm = get_model("compose")
+    llm = get_model("compose").with_retry(stop_after_attempt=3)
     result = llm.invoke(
         [
             (

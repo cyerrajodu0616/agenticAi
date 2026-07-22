@@ -9,6 +9,9 @@ class FakeStructured:
     def with_structured_output(self, schema):
         return self
 
+    def with_retry(self, **kwargs):
+        return self
+
     def invoke(self, messages):
         self.seen.append(str(messages))
         return self.result
@@ -18,6 +21,9 @@ class FakeComposer:
     def __init__(self, text="composed"):
         self.text = text
         self.seen = []
+
+    def with_retry(self, **kwargs):
+        return self
 
     def invoke(self, messages):
         self.seen.append(str(messages))

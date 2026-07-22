@@ -9,6 +9,9 @@ class FakeClassifier:
     def with_structured_output(self, schema):
         return self
 
+    def with_retry(self, **kwargs):
+        return self
+
     def invoke(self, messages):
         from assistant.graph import Intent
 
@@ -16,6 +19,9 @@ class FakeClassifier:
 
 
 class FakeComposer:
+    def with_retry(self, **kwargs):
+        return self
+
     def invoke(self, messages):
         class R:
             content = "DRAFT ANSWER grounded in KB"

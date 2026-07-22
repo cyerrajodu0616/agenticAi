@@ -66,7 +66,11 @@ def redact_pii(state: State) -> State:
 
 
 def classify_intent(state: State) -> State:
-    llm = get_model("classify").with_structured_output(Intent)
+    # Groq's structured output occasionally fails a tool call outright (empirically ~1
+    # in 5, mostly transient); this is the real-question-ingestion path with no user
+    # around to retype, so a failure here is more consequential than in the interactive
+    # chat surfaces — retry before letting it propagate.
+    llm = get_model("classify").with_structured_output(Intent).with_retry(stop_after_attempt=3)
     result = llm.invoke(
         [
             ("system", "Classify the incoming work message. Respond with the schema."),
@@ -86,7 +90,7 @@ def compose(state: State) -> State:
         f"[{h['source']}:{redact(h['title'])[0]} sim={h['similarity']:.2f}]\n{redact(h['content'])[0]}"
         for h in state["kb_hits"]
     )
-    llm = get_model("compose")
+    llm = get_model("compose").with_retry(stop_after_attempt=3)
     result = llm.invoke(
         [
             (
