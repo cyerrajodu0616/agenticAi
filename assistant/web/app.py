@@ -123,22 +123,32 @@ def chat_endpoint(req: ChatRequest) -> dict:
 
 
 def _is_local_request(request: Request) -> bool:
-    """True only if the request reached this server from localhost. Uses the TCP-derived
-    client address (request.client.host), NOT the Host header — Host is entirely
-    client-controlled (a background security review correctly flagged an earlier version
-    of this function for trusting it: trivially spoofable in principle, and this specific
-    ngrok tunnel only happened to reject a mismatched Host at its own edge, which is an
-    incidental property of that provider, not something this code should depend on).
-    uvicorn's default ProxyHeadersMiddleware (proxy_headers=True,
-    forwarded_allow_ips="127.0.0.1") substitutes X-Forwarded-For into request.client for
-    connections that genuinely originate from 127.0.0.1 — which is what ngrok's local
-    agent does — so this reflects the real remote client, not the tunnel's own loopback
-    hop. Verified live (2026-07-22): a client-supplied X-Forwarded-For header sent through
-    the tunnel is overwritten by ngrok's edge with the real connecting address before
-    uvicorn ever sees it — confirmed by attempting exactly that spoof and observing the
-    real IP survive."""
+    """True only if the request reached this server from localhost. Requires BOTH of two
+    independent signals to agree — each defeats a different forgery angle, neither is
+    sufficient alone (both gaps were found by background security review, 2026-07-22):
+
+    1. request.client.host in (127.0.0.1, ::1) — the TCP-derived client address, NOT the
+       Host header (Host is entirely client-controlled by an API client like curl; the
+       first version of this function trusted it and was a real auth-bypass — a remote
+       peer could just send `Host: 127.0.0.1`). uvicorn's ProxyHeadersMiddleware
+       (forwarded_allow_ips="127.0.0.1") substitutes X-Forwarded-For into request.client
+       for connections genuinely from 127.0.0.1 (what ngrok's local agent does), so this
+       reflects the real remote client. Verified live: a forged X-Forwarded-For sent
+       through the tunnel is overwritten by ngrok's edge with the real address first.
+
+    2. Host header literally matches 127.0.0.1[:port] or localhost[:port] — defeats DNS
+       rebinding, a DIFFERENT attack signal (1) alone can't catch: a malicious webpage
+       (open in the user's own browser, unrelated to this app) whose hostname re-resolves
+       to 127.0.0.1 causes the browser to make a genuinely socket-local request — signal
+       (1) would say "local" since the TCP connection really is from 127.0.0.1 — but a
+       real browser cannot forge its own Host header to match the request's true
+       destination; it always sends the hostname it believes it navigated to (the
+       attacker's rebound domain), not "127.0.0.1". An API client (curl) COULD fake this
+       header, which is exactly why signal (1) exists too — neither check is sufficient
+       alone, both must agree."""
     client = request.client.host if request.client else ""
-    return client in ("127.0.0.1", "::1")
+    host = request.headers.get("host", "").split(":")[0]
+    return client in ("127.0.0.1", "::1") and host in ("127.0.0.1", "localhost")
 
 
 @app.post("/api/teach/confirm")

@@ -101,9 +101,11 @@ def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     monkeypatch.setattr(web_app, "kb_learn", _boom)
     # raise_server_exceptions=False: let the app's own exception handler produce
     # the response instead of the test client re-raising the original exception.
-    # client=("127.0.0.1", ...): local -> hits kb_learn, not the peer gate.
+    # client=("127.0.0.1", ...) + base_url matching: _is_local_request now requires
+    # BOTH the socket-level client address AND the Host header to say localhost.
     no_raise_client = TestClient(
-        web_app.app, raise_server_exceptions=False, client=("127.0.0.1", 12345)
+        web_app.app, raise_server_exceptions=False,
+        client=("127.0.0.1", 12345), base_url="http://127.0.0.1",
     )
     resp = no_raise_client.post(
         "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
@@ -188,17 +190,20 @@ def test_chat_resolve_extraction_failure_returns_friendly_message(client, monkey
 
 
 def test_teach_confirm_writes_directly_when_local(monkeypatch):
-    """_is_local_request keys off the TCP-derived client address (request.client.host),
-    not the Host header -- Host is fully client-controlled and was flagged by a security
-    review as spoofable. TestClient's `client=` param sets the simulated remote address
-    at the ASGI-scope level, which is what request.client.host actually reads."""
+    """_is_local_request requires BOTH the TCP-derived client address AND the Host header
+    to say localhost -- neither alone is trustworthy (a remote peer can fake Host; a
+    DNS-rebinding page can make a real browser connect from a real local socket while
+    sending its own attacker-controlled Host). TestClient's `client=` sets the simulated
+    socket peer; `base_url` controls what Host header requests carry."""
     import assistant.web.app as web_app
 
     captured = {}
     monkeypatch.setattr(
         web_app, "kb_learn", lambda **kw: captured.update(kw) or 42
     )
-    local_client = TestClient(web_app.app, client=("127.0.0.1", 12345))
+    local_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://127.0.0.1"
+    )
     resp = local_client.post("/api/teach/confirm", json={"question": "Q?", "answer": "A"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "learned", "id": 42}
@@ -226,4 +231,33 @@ def test_teach_confirm_gated_when_not_local(client, monkeypatch):
     resp = client.post("/api/teach/confirm", json={"question": "Q?", "answer": "A"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "pending_approval", "id": 7}
+    assert captured == {"question": "Q?", "answer": "A"}
+
+
+def test_teach_confirm_gated_for_dns_rebinding_attempt(monkeypatch):
+    """DNS rebinding: a malicious webpage's hostname re-resolves to 127.0.0.1, so the
+    victim's own browser makes a request that IS genuinely socket-local (client address
+    really is 127.0.0.1) -- but the browser can't forge its own Host header, so it still
+    carries the attacker's original domain, not "127.0.0.1"/"localhost". This must be
+    gated, not treated as a trusted local write, even though the socket signal alone
+    would say "local"."""
+    import assistant.web.app as web_app
+
+    monkeypatch.setattr(
+        web_app, "kb_learn",
+        lambda **kw: pytest.fail("kb_learn must not be called for a DNS-rebinding request"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        web_app, "kb_learn_pending",
+        lambda question, answer: captured.update(question=question, answer=answer) or 9,
+    )
+    # Socket-local (client=127.0.0.1) but Host is the attacker's rebound domain, not
+    # localhost -- exactly the DNS-rebinding shape.
+    rebinding_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://evil-rebound.example",
+    )
+    resp = rebinding_client.post("/api/teach/confirm", json={"question": "Q?", "answer": "A"})
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "pending_approval", "id": 9}
     assert captured == {"question": "Q?", "answer": "A"}
