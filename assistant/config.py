@@ -15,9 +15,10 @@ EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 
 # Optional external knowledge source: the arcCenter Config Resolution Engine
-# ("Graphify") -- live read-only SQL query against its arc_config_kb schema on
-# the arcCenter dev Postgres server. See assistant/arc_config_db.py for the
-# credential-resolution chain.
+# ("Graphify") -- supports both HTTP queries (graphify.py) and live SQL reads
+# (arc_config_db.py) against its arc_config_kb schema. See assistant/arc_config_db.py
+# for the credential-resolution chain.
+GRAPHIFY_BASE_URL = os.getenv("GRAPHIFY_BASE_URL", "http://localhost:8080")
 GRAPHIFY_ENABLED = os.getenv("GRAPHIFY_ENABLED", "false").lower() == "true"
 GRAPHIFY_TIMEOUT = float(os.getenv("GRAPHIFY_TIMEOUT", "5"))
 ARC_CONFIG_KB_DSN = os.getenv("ARC_CONFIG_KB_DSN", "")

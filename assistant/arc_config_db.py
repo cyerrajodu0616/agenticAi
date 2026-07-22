@@ -35,7 +35,7 @@ def resolve_dsn() -> str | None:
                  "-n", key, "--query", "value", "-o", "tsv"],
                 capture_output=True, text=True, check=True, timeout=10,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        except Exception as e:
             _log.debug("arc_config_kb DSN resolution failed fetching %s: %s", key, e)
             return None
         secrets[key] = result.stdout.strip()
@@ -52,8 +52,13 @@ def get_connection() -> psycopg.Connection | None:
         return None
     try:
         conn = psycopg.connect(dsn, connect_timeout=config.GRAPHIFY_TIMEOUT, autocommit=True)
+    except Exception as e:
+        _log.debug("arc_config_kb connection failed: %s", e)
+        return None
+    try:
         register_vector(conn)
     except Exception as e:
         _log.debug("arc_config_kb connection failed: %s", e)
+        conn.close()
         return None
     return conn
