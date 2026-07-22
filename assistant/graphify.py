@@ -18,6 +18,15 @@ Two lookup paths, merged and sorted by similarity:
     2026-07-22-graphify-live-integration-design.md for why this doesn't need a schema
     migration on either side.
 
+    The full-text candidate pool is ranked with the "attributes=" segment of a
+    function's content weighted far above the rest (Postgres tsvector weight 'A' vs
+    'D') -- without this, a function that merely *reads* an attribute in its condition
+    text (e.g. "if applicantAge > 60") outranks the function that actually *produces*
+    it (whose content only mentions the attribute once, in "attributes=applicantAge"),
+    because plain ts_rank rewards raw mention count. Live-verified against a real
+    question ("how is applicantAge generated in 614004"): without this weighting the
+    producing function (F0100) ranked 1840th of 2218 matches; with it, 1st.
+
 IMPORTANT: The semantic-match path only runs when config.MODEL_BACKEND == "cloud" (i.e.,
 when the query embedder is text-embedding-3-small). Under MODEL_BACKEND == "local"
 (e.g., ollama nomic-embed-text), the semantic path is skipped entirely and search falls
@@ -102,12 +111,17 @@ def _semantic_matches(conn, question: str, limit: int) -> list[dict]:
     # Normalize query vector to unit L2 norm for true cosine similarity
     query_vec = _truncate_and_normalize(query_vec, len(query_vec))
     candidates = conn.execute(
-        """
+        r"""
         SELECT entity_type, entity_id, label, content, embedding
         FROM arc_config_kb.kb_embeddings
         WHERE embedding IS NOT NULL
           AND to_tsvector('english', content) @@ to_tsquery('english', %(q)s)
-        ORDER BY ts_rank(to_tsvector('english', content), to_tsquery('english', %(q)s)) DESC
+        ORDER BY ts_rank(
+            setweight(to_tsvector('english',
+                COALESCE(substring(content from 'attributes=([^.]*)\.'), '')), 'A')
+            || setweight(to_tsvector('english', content), 'D'),
+            to_tsquery('english', %(q)s)
+        ) DESC
         LIMIT %(cand_limit)s
         """,
         {"q": or_query, "cand_limit": _SEMANTIC_CANDIDATE_LIMIT},
