@@ -123,14 +123,22 @@ def chat_endpoint(req: ChatRequest) -> dict:
 
 
 def _is_local_request(request: Request) -> bool:
-    """True only if the request reached this server directly on localhost, not via
-    ngrok or any other forwarding proxy. Verified empirically (2026-07-21): ngrok
-    passes through the original Host header (the tunnel's public subdomain) rather
-    than rewriting it to localhost, so this is a reliable signal in practice — not a
-    substitute for real auth, just consistent with this app's existing trust model
-    (127.0.0.1 binding + whatever gate a tunnel adds in front of it)."""
-    host = request.headers.get("host", "")
-    return host.split(":")[0] in ("127.0.0.1", "localhost")
+    """True only if the request reached this server from localhost. Uses the TCP-derived
+    client address (request.client.host), NOT the Host header — Host is entirely
+    client-controlled (a background security review correctly flagged an earlier version
+    of this function for trusting it: trivially spoofable in principle, and this specific
+    ngrok tunnel only happened to reject a mismatched Host at its own edge, which is an
+    incidental property of that provider, not something this code should depend on).
+    uvicorn's default ProxyHeadersMiddleware (proxy_headers=True,
+    forwarded_allow_ips="127.0.0.1") substitutes X-Forwarded-For into request.client for
+    connections that genuinely originate from 127.0.0.1 — which is what ngrok's local
+    agent does — so this reflects the real remote client, not the tunnel's own loopback
+    hop. Verified live (2026-07-22): a client-supplied X-Forwarded-For header sent through
+    the tunnel is overwritten by ngrok's edge with the real connecting address before
+    uvicorn ever sees it — confirmed by attempting exactly that spoof and observing the
+    real IP survive."""
+    client = request.client.host if request.client else ""
+    return client in ("127.0.0.1", "::1")
 
 
 @app.post("/api/teach/confirm")

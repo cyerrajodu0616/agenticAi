@@ -101,10 +101,12 @@ def test_chat_unhandled_exception_returns_json_error(monkeypatch):
     monkeypatch.setattr(web_app, "kb_learn", _boom)
     # raise_server_exceptions=False: let the app's own exception handler produce
     # the response instead of the test client re-raising the original exception.
-    no_raise_client = TestClient(web_app.app, raise_server_exceptions=False)
+    # client=("127.0.0.1", ...): local -> hits kb_learn, not the peer gate.
+    no_raise_client = TestClient(
+        web_app.app, raise_server_exceptions=False, client=("127.0.0.1", 12345)
+    )
     resp = no_raise_client.post(
         "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
-        headers={"host": "127.0.0.1:8765"},  # local -> hits kb_learn, not the peer gate
     )
     assert resp.status_code == 500
     body = resp.json()
@@ -185,17 +187,19 @@ def test_chat_resolve_extraction_failure_returns_friendly_message(client, monkey
     }
 
 
-def test_teach_confirm_writes_directly_when_local(client, monkeypatch):
+def test_teach_confirm_writes_directly_when_local(monkeypatch):
+    """_is_local_request keys off the TCP-derived client address (request.client.host),
+    not the Host header -- Host is fully client-controlled and was flagged by a security
+    review as spoofable. TestClient's `client=` param sets the simulated remote address
+    at the ASGI-scope level, which is what request.client.host actually reads."""
     import assistant.web.app as web_app
 
     captured = {}
     monkeypatch.setattr(
         web_app, "kb_learn", lambda **kw: captured.update(kw) or 42
     )
-    resp = client.post(
-        "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
-        headers={"host": "127.0.0.1:8765"},
-    )
+    local_client = TestClient(web_app.app, client=("127.0.0.1", 12345))
+    resp = local_client.post("/api/teach/confirm", json={"question": "Q?", "answer": "A"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "learned", "id": 42}
     assert captured["question"] == "Q?"
@@ -204,8 +208,11 @@ def test_teach_confirm_writes_directly_when_local(client, monkeypatch):
 
 
 def test_teach_confirm_gated_when_not_local(client, monkeypatch):
-    """A request whose Host header isn't 127.0.0.1/localhost (e.g. arrived via ngrok)
-    must NOT write to agent_knowledge directly -- it queues for approval instead."""
+    """A request whose client address isn't 127.0.0.1/::1 (e.g. arrived via ngrok, whose
+    local agent's forwarded X-Forwarded-For uvicorn substitutes into request.client) must
+    NOT write to agent_knowledge directly -- it queues for approval instead. The default
+    `client` fixture's TestClient uses ('testclient', 50000), which is already non-local,
+    so no explicit override is needed here to exercise the gated path."""
     import assistant.web.app as web_app
 
     monkeypatch.setattr(
@@ -216,10 +223,7 @@ def test_teach_confirm_gated_when_not_local(client, monkeypatch):
         web_app, "kb_learn_pending",
         lambda question, answer: captured.update(question=question, answer=answer) or 7,
     )
-    resp = client.post(
-        "/api/teach/confirm", json={"question": "Q?", "answer": "A"},
-        headers={"host": "3bbc-abc123.ngrok-free.app"},
-    )
+    resp = client.post("/api/teach/confirm", json={"question": "Q?", "answer": "A"})
     assert resp.status_code == 200
     assert resp.json() == {"status": "pending_approval", "id": 7}
     assert captured == {"question": "Q?", "answer": "A"}
