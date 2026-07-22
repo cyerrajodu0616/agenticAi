@@ -6,12 +6,11 @@ explicitly with: pytest -m integration tests/test_graphify_live.py
 from dotenv import load_dotenv
 import pytest
 
-load_dotenv()
-
 pytestmark = pytest.mark.integration
 
 
 def test_dsn_resolves_via_real_az_cli():
+    load_dotenv()
     from assistant import arc_config_db
 
     dsn = arc_config_db.resolve_dsn()
@@ -20,6 +19,7 @@ def test_dsn_resolves_via_real_az_cli():
 
 
 def test_known_product_id_returns_a_hit(monkeypatch):
+    load_dotenv()
     import assistant.graphify as graphify
 
     monkeypatch.setattr(graphify.config, "GRAPHIFY_ENABLED", True)
