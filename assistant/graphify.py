@@ -70,6 +70,8 @@ def _exact_matches(conn, question: str, limit: int) -> list[dict]:
 
 def _semantic_matches(conn, question: str, limit: int) -> list[dict]:
     query_vec = _embed(question)
+    # Normalize query vector to unit L2 norm for true cosine similarity
+    query_vec = _truncate_and_normalize(query_vec, len(query_vec))
     candidates = conn.execute(
         """
         SELECT entity_type, entity_id, label, content, embedding
@@ -110,6 +112,9 @@ def graphify_search(question: str, limit: int = 3) -> list[dict]:
         _log.debug("Graphify query failed: %s", e)
         return []
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception as e:
+            _log.debug("Failed to close Graphify connection: %s", e)
     hits.sort(key=lambda h: h["similarity"], reverse=True)
     return hits[:limit]
