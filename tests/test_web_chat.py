@@ -27,10 +27,14 @@ def test_chat_ask_returns_answer(client, monkeypatch):
     import assistant.web.app as web_app
 
     monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("ask"))
-    monkeypatch.setattr(web_app, "answer_from_kb", lambda text: "the answer, cited")
+    hits = [{"source": "agent", "title": "deploy window", "content": "Wed 6pm", "similarity": 0.9}]
+    monkeypatch.setattr(web_app, "answer_from_kb", lambda text: ("the answer, cited", hits))
+    monkeypatch.setattr(web_app, "save_chat", lambda **kw: 42)
     resp = client.post("/api/chat", json={"text": "when is the deploy window?"})
     assert resp.status_code == 200
-    assert resp.json() == {"action": "ask", "answer": "the answer, cited"}
+    assert resp.json() == {
+        "action": "ask", "answer": "the answer, cited", "chat_id": 42, "sources": hits,
+    }
 
 
 def test_chat_teach_returns_proposal_without_writing(client, monkeypatch):
@@ -187,6 +191,44 @@ def test_chat_resolve_extraction_failure_returns_friendly_message(client, monkey
         "action": "other",
         "message": "Sorry, I couldn't understand that — try rephrasing.",
     }
+
+
+def test_chat_ask_persists_with_redacted_question(monkeypatch):
+    """The stored question must be the redacted text, not the raw user input --
+    matching this project's redact-before-persist invariant, enforced at every
+    other write site (kb.py, ingest.py)."""
+    import assistant.web.app as web_app
+
+    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("ask"))
+    monkeypatch.setattr(web_app, "answer_from_kb", lambda text: ("cited answer", []))
+    captured = {}
+    monkeypatch.setattr(
+        web_app, "save_chat",
+        lambda **kw: captured.update(kw) or 7,
+    )
+    local_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://127.0.0.1"
+    )
+    local_client.post(
+        "/api/chat", json={"text": "call bob@corp.com about the deploy window"},
+    )
+    assert "bob@corp.com" not in captured["question"]
+    assert captured["created_by"] == "local"
+
+
+def test_chat_history_returns_recent_entries(client, monkeypatch):
+    import assistant.web.app as web_app
+
+    rows = [
+        {"id": 2, "question": "q2", "answer": "a2", "sources": [], "created_by": "local",
+         "created_at": "2026-07-23T10:00:00"},
+        {"id": 1, "question": "q1", "answer": "a1", "sources": [], "created_by": "local",
+         "created_at": "2026-07-23T09:00:00"},
+    ]
+    monkeypatch.setattr(web_app, "list_recent", lambda limit=20: rows)
+    resp = client.get("/api/chat/history")
+    assert resp.status_code == 200
+    assert resp.json() == {"entries": rows}
 
 
 def test_teach_confirm_writes_directly_when_local(monkeypatch):

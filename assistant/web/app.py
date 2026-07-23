@@ -17,6 +17,7 @@ from starlette.requests import Request
 
 from assistant import config
 from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
+from assistant.chat_history import list_recent, save_chat
 from assistant.db.client import init_schema
 from assistant.ingest import ingest_text
 from assistant.kb import kb_delete, kb_find, kb_learn, kb_learn_pending, kb_list_recent, kb_update
@@ -80,17 +81,22 @@ class IngestRequest(BaseModel):
 
 
 @app.post("/api/chat")
-def chat_endpoint(req: ChatRequest) -> dict:
+def chat_endpoint(req: ChatRequest, request: Request) -> dict:
     try:
         intent = classify_chat(req.text)
     except Exception:
         return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
     if intent.action == "ask":
         try:
-            answer = answer_from_kb(req.text)
+            answer, hits = answer_from_kb(req.text)
         except Exception:
             return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
-        return {"action": "ask", "answer": answer}
+        redacted_question, _ = redact(req.text)
+        created_by = "local" if _is_local_request(request) else "peer"
+        chat_id = save_chat(
+            question=redacted_question, answer=answer, sources=hits, created_by=created_by
+        )
+        return {"action": "ask", "answer": answer, "chat_id": chat_id, "sources": hits}
     if intent.action == "teach":
         try:
             pair = extract_teach_pair(req.text)
@@ -120,6 +126,11 @@ def chat_endpoint(req: ChatRequest) -> dict:
     if intent.action == "tasks":
         return {"action": "tasks", "message": "see the Tasks tab"}
     return {"action": "other", "message": intent.reasoning}
+
+
+@app.get("/api/chat/history")
+def chat_history_endpoint() -> dict:
+    return {"entries": list_recent()}
 
 
 def _is_local_request(request: Request) -> bool:
