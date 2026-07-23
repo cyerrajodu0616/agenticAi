@@ -235,6 +235,17 @@
   .proposal textarea { margin: 0.5rem 0; }
   .proposal button { margin-right: 0.4rem; margin-top: 0.5rem; }
 
+  .correction-body { margin-top: 0.5rem; }
+  .correction-body .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--signal);
+    margin: 0.5rem 0 0.3rem;
+  }
+  .correction-body label { display: block; font-size: 0.85rem; margin-bottom: 0.2rem; }
+
   .settled {
     background: var(--confirm-bg);
     border: 1px solid var(--line);
@@ -328,6 +339,7 @@
       <button id="tab-btn-chat" class="active" onclick="showTab('chat')">Chat</button>
       <button id="tab-btn-kb" onclick="showTab('kb')">Knowledge</button>
       <button id="tab-btn-tasks" onclick="showTab('tasks')">Tasks <span class="badge" id="tasks-badge" hidden>0</span></button>
+      <button id="tab-btn-history" onclick="showTab('history')">History</button>
     </nav>
   </aside>
 
@@ -380,6 +392,11 @@
       <p class="import-hint">Anything taught through the shared link waits here — it's not in the knowledge base until you approve it.</p>
       <div id="pending-kb-list"></div>
     </section>
+
+    <section id="tab-history" class="tab">
+      <h2 class="section-title">Chat history</h2>
+      <div id="history-list"></div>
+    </section>
   </main>
 </div>
 
@@ -400,12 +417,13 @@ function esc(s) {
 let _pendingProposals = {};
 
 function showTab(name) {
-  for (const t of ['chat', 'kb', 'tasks']) {
+  for (const t of ['chat', 'kb', 'tasks', 'history']) {
     document.getElementById('tab-' + t).classList.toggle('active', t === name);
     document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
   }
   if (name === 'kb') loadKb();
   if (name === 'tasks') loadTasks();
+  if (name === 'history') loadHistory();
 }
 
 async function api(method, path, body) {
@@ -427,6 +445,72 @@ function logMsg(who, html) {
   div.scrollIntoView({block: 'nearest'});
 }
 
+function renderCorrectionUI(chatId, sources) {
+  const id = 'correction-' + chatId + '-' + Date.now();
+  _pendingProposals[id] = {chatId, sources};
+  const sourceOptions = sources.map((s, i) =>
+    `<label><input type="radio" name="src-${id}" value="${i}"> [${esc(s.source)}] ${esc(s.title)} (sim ${s.similarity.toFixed(2)})</label>`
+  ).join('<br>');
+  return `<div class="proposal" id="${id}">
+    <button onclick="toggleCorrection('${id}')">Was this right?</button>
+    <div class="correction-body" hidden>
+      ${sources.length ? `<div class="eyebrow">Pick the correct source</div><div>${sourceOptions}</div><button onclick="submitCorrectionPick('${id}')">Use selected source</button>` : ''}
+      <div class="eyebrow">Or write the correct answer</div>
+      <textarea rows="3" placeholder="Correct answer"></textarea>
+      <button class="primary" onclick="submitCorrectionWrite('${id}')">Save as correct answer</button>
+    </div>
+  </div>`;
+}
+
+function toggleCorrection(id) {
+  document.querySelector('#' + id + ' .correction-body').hidden ^= true;
+}
+
+async function submitCorrectionPick(id) {
+  const container = document.getElementById(id);
+  const selected = container.querySelector('input[type=radio]:checked');
+  if (!selected) { alert('Pick a source first.'); return; }
+  const p = _pendingProposals[id];
+  try {
+    const data = await api('POST', `/api/chat/${p.chatId}/correct`, {
+      mode: 'pick', source_index: parseInt(selected.value, 10),
+    });
+    container.innerHTML = data.status === 'learned' ? 'Saved to knowledge base.' : 'Submitted for approval.';
+    delete _pendingProposals[id];
+  } catch (e) {
+    container.querySelector('.correction-body').insertAdjacentHTML(
+      'beforeend', '<div class="error">' + esc(e.message) + '</div>'
+    );
+  }
+}
+
+async function submitCorrectionWrite(id) {
+  const container = document.getElementById(id);
+  const answer = container.querySelector('textarea').value.trim();
+  if (!answer) { alert('Write an answer first.'); return; }
+  const p = _pendingProposals[id];
+  try {
+    const data = await api('POST', `/api/chat/${p.chatId}/correct`, {mode: 'write', answer});
+    container.innerHTML = data.status === 'learned' ? 'Saved to knowledge base.' : 'Submitted for approval.';
+    delete _pendingProposals[id];
+  } catch (e) {
+    container.querySelector('.correction-body').insertAdjacentHTML(
+      'beforeend', '<div class="error">' + esc(e.message) + '</div>'
+    );
+  }
+}
+
+async function loadHistory() {
+  const data = await api('GET', '/api/chat/history');
+  const el = document.getElementById('history-list');
+  if (!data.entries.length) { el.innerHTML = '<p class="import-hint">No chat history yet.</p>'; return; }
+  el.innerHTML = data.entries.map(h => `<div class="settled">
+    <b>Q:</b> ${esc(h.question)}<br><b>A:</b> ${esc(h.answer)}<br>
+    <small>${esc(h.created_at)} (${esc(h.created_by)})</small>
+    ${renderCorrectionUI(h.id, h.sources)}
+  </div>`).join('');
+}
+
 async function sendChat() {
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
@@ -436,7 +520,7 @@ async function sendChat() {
   try {
     const data = await api('POST', '/api/chat', {text});
     if (data.action === 'ask') {
-      logMsg('bot', esc(data.answer));
+      logMsg('bot', esc(data.answer) + renderCorrectionUI(data.chat_id, data.sources || []));
     } else if (data.action === 'teach') {
       const id = 'proposal-' + Date.now();
       _pendingProposals[id] = {question: data.question, answer: data.answer};
