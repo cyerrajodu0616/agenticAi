@@ -49,3 +49,37 @@ def test_attribute_generation_question_ranks_producer_over_consumer(monkeypatch)
         f"got {hits[0]['title']!r}: {hits[0]['content'][:100]!r}"
     )
     assert "F1044" not in hits[0]["title"]
+
+
+def test_pdf_location_question_surfaces_product_scoped_functions(monkeypatch):
+    """Regression pin: "the pdf location for product 314005" retrieved ZERO of the 16
+    real PDF-generating functions trigger-linked to 314005 (exact/semantic paths can't
+    see the product link -- it only lives in trigger_entries, not in a function's
+    content). The product-scoped path + confidence boost fixes this -- found and fixed
+    live, 2026-07-22. Checks at least one genuine PDF-generator (content literally
+    mentions "pdf") appears in the top 5, not any specific function id (several
+    near-duplicate C4401* PDF functions exist)."""
+    load_dotenv()
+    import assistant.graphify as graphify
+
+    monkeypatch.setattr(graphify.config, "GRAPHIFY_ENABLED", True)
+    hits = graphify.graphify_search("do we know the pdf location for product 314005", limit=5)
+    assert hits, "expected at least one real hit from arc_config_kb"
+    assert any("pdf" in h["content"].lower() for h in hits), (
+        f"expected a real PDF-generating function in the top 5, got: "
+        f"{[h['title'] for h in hits]}"
+    )
+
+
+def test_no_duplicate_entities_across_lookup_paths(monkeypatch):
+    """Regression pin: the same function can legitimately surface from more than one
+    lookup path (e.g. both product-scoped-linked and a strong unscoped semantic match --
+    F0100 does for this exact question). Without dedup it would appear twice, wasting a
+    result slot -- found and fixed live, 2026-07-22."""
+    load_dotenv()
+    import assistant.graphify as graphify
+
+    monkeypatch.setattr(graphify.config, "GRAPHIFY_ENABLED", True)
+    hits = graphify.graphify_search("how is the applicantAge generated in 614004", limit=5)
+    titles = [h["title"] for h in hits]
+    assert len(titles) == len(set(titles)), f"expected no duplicate hits, got: {titles}"
