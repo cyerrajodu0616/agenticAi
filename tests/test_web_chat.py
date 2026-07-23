@@ -325,3 +325,106 @@ def test_teach_confirm_gated_for_dns_rebinding_attempt(monkeypatch):
     assert resp.status_code == 200
     assert resp.json() == {"status": "pending_approval", "id": 9}
     assert captured == {"question": "Q?", "answer": "A"}
+
+
+def test_correct_chat_missing_returns_404(monkeypatch):
+    import assistant.web.app as web_app
+
+    monkeypatch.setattr(web_app, "get_chat", lambda chat_id: None)
+    local_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://127.0.0.1"
+    )
+    resp = local_client.post("/api/chat/999/correct", json={"mode": "write", "answer": "x"})
+    assert resp.status_code == 404
+
+
+def test_correct_chat_pick_mode_local_writes_directly(monkeypatch):
+    import assistant.web.app as web_app
+
+    chat = {
+        "id": 5, "question": "when is the deploy window?", "answer": "old wrong answer",
+        "sources": [
+            {"source": "agent", "title": "a", "content": "Wed 6pm", "similarity": 0.5},
+            {"source": "graphify", "title": "b", "content": "Thu 7pm", "similarity": 0.4},
+        ],
+        "created_by": "local", "created_at": "2026-07-23T10:00:00",
+    }
+    monkeypatch.setattr(web_app, "get_chat", lambda chat_id: chat)
+    captured = {}
+    monkeypatch.setattr(web_app, "kb_learn", lambda **kw: captured.update(kw) or 42)
+    monkeypatch.setattr(
+        web_app, "kb_learn_pending",
+        lambda **kw: pytest.fail("kb_learn_pending must not be called for a local correction"),
+    )
+    local_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://127.0.0.1"
+    )
+    resp = local_client.post("/api/chat/5/correct", json={"mode": "pick", "source_index": 1})
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "learned", "id": 42}
+    assert captured["question"] == "when is the deploy window?"
+    assert captured["answer"] == "Thu 7pm"  # sources[1].content, verbatim, no rewrite
+
+
+def test_correct_chat_write_mode_local_writes_directly(monkeypatch):
+    import assistant.web.app as web_app
+
+    chat = {
+        "id": 5, "question": "when is the deploy window?", "answer": "old wrong answer",
+        "sources": [], "created_by": "local", "created_at": "2026-07-23T10:00:00",
+    }
+    monkeypatch.setattr(web_app, "get_chat", lambda chat_id: chat)
+    captured = {}
+    monkeypatch.setattr(web_app, "kb_learn", lambda **kw: captured.update(kw) or 43)
+    local_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://127.0.0.1"
+    )
+    resp = local_client.post(
+        "/api/chat/5/correct", json={"mode": "write", "answer": "Thursdays 7pm ET"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "learned", "id": 43}
+    assert captured["question"] == "when is the deploy window?"
+    assert captured["answer"] == "Thursdays 7pm ET"
+
+
+def test_correct_chat_gated_when_not_local(client, monkeypatch):
+    """A peer's correction (default TestClient fixture, non-local) must not write to
+    agent_knowledge directly -- it queues for approval, same as /api/teach/confirm."""
+    import assistant.web.app as web_app
+
+    chat = {
+        "id": 5, "question": "when is the deploy window?", "answer": "old wrong answer",
+        "sources": [], "created_by": "peer", "created_at": "2026-07-23T10:00:00",
+    }
+    monkeypatch.setattr(web_app, "get_chat", lambda chat_id: chat)
+    monkeypatch.setattr(
+        web_app, "kb_learn",
+        lambda **kw: pytest.fail("kb_learn must not be called for a peer correction"),
+    )
+    captured = {}
+    monkeypatch.setattr(
+        web_app, "kb_learn_pending",
+        lambda question, answer: captured.update(question=question, answer=answer) or 9,
+    )
+    resp = client.post(
+        "/api/chat/5/correct", json={"mode": "write", "answer": "Thursdays 7pm ET"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "pending_approval", "id": 9}
+    assert captured == {"question": "when is the deploy window?", "answer": "Thursdays 7pm ET"}
+
+
+def test_correct_chat_pick_mode_out_of_range_returns_400(monkeypatch):
+    import assistant.web.app as web_app
+
+    chat = {
+        "id": 5, "question": "q", "answer": "a", "sources": [],
+        "created_by": "local", "created_at": "2026-07-23T10:00:00",
+    }
+    monkeypatch.setattr(web_app, "get_chat", lambda chat_id: chat)
+    local_client = TestClient(
+        web_app.app, client=("127.0.0.1", 12345), base_url="http://127.0.0.1"
+    )
+    resp = local_client.post("/api/chat/5/correct", json={"mode": "pick", "source_index": 0})
+    assert resp.status_code == 400

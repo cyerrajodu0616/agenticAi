@@ -9,6 +9,7 @@ data the browser displayed, never just an id to "re-derive" from.
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -17,7 +18,7 @@ from starlette.requests import Request
 
 from assistant import config
 from assistant.chat import answer_from_kb, classify_chat, extract_resolution, extract_teach_pair
-from assistant.chat_history import list_recent, save_chat
+from assistant.chat_history import get_chat, list_recent, save_chat
 from assistant.db.client import init_schema
 from assistant.ingest import ingest_text
 from assistant.kb import kb_delete, kb_find, kb_learn, kb_learn_pending, kb_list_recent, kb_update
@@ -80,6 +81,12 @@ class IngestRequest(BaseModel):
     text: str
 
 
+class ChatCorrectRequest(BaseModel):
+    mode: Literal["pick", "write"]
+    source_index: int | None = None
+    answer: str | None = None
+
+
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest, request: Request) -> dict:
     try:
@@ -135,6 +142,29 @@ def chat_endpoint(req: ChatRequest, request: Request) -> dict:
 @app.get("/api/chat/history")
 def chat_history_endpoint() -> dict:
     return {"entries": list_recent()}
+
+
+@app.post("/api/chat/{chat_id}/correct")
+def correct_chat(chat_id: int, req: ChatCorrectRequest, request: Request) -> dict:
+    chat = get_chat(chat_id)
+    if chat is None:
+        raise HTTPException(404, f"chat {chat_id} not found")
+    if req.mode == "pick":
+        if req.source_index is None or not (0 <= req.source_index < len(chat["sources"])):
+            raise HTTPException(400, "source_index out of range")
+        answer = chat["sources"][req.source_index]["content"]
+    else:
+        if not req.answer:
+            raise HTTPException(400, "answer required for write mode")
+        answer = req.answer
+    if _is_local_request(request):
+        new_id = kb_learn(
+            question=chat["question"], answer=answer,
+            created_by="chat-correction", source_refs=[f"chat:{chat_id}"],
+        )
+        return {"status": "learned", "id": new_id}
+    new_id = kb_learn_pending(question=chat["question"], answer=answer)
+    return {"status": "pending_approval", "id": new_id}
 
 
 def _is_local_request(request: Request) -> bool:
