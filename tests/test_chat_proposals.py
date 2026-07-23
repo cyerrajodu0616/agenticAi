@@ -72,18 +72,18 @@ def test_answer_from_kb_grounds_and_cites(monkeypatch):
 
     fake = FakeComposer(text="Wednesdays 6pm ET [agent:deploy window]")
     monkeypatch.setattr(chat, "get_model", lambda role: fake)
-    monkeypatch.setattr(
-        chat, "kb_search",
-        lambda q: [{"source": "agent", "title": "deploy window", "content": "Wed 6pm", "similarity": 0.9}],
-    )
-    out = chat.answer_from_kb("when is the deploy window?")
+    hits = [{"source": "agent", "title": "deploy window", "content": "Wed 6pm", "similarity": 0.9}]
+    monkeypatch.setattr(chat, "kb_search", lambda q: hits)
+    out, returned_hits = chat.answer_from_kb("when is the deploy window?")
     assert "Wednesdays" in out
     assert "Wed 6pm" in fake.seen[0]  # grounded in KB content
+    assert returned_hits == hits  # the hits used to ground the answer are returned, not discarded
 
 
 def test_answer_from_kb_empty_kb(monkeypatch):
     import assistant.chat as chat
 
     monkeypatch.setattr(chat, "kb_search", lambda q: [])
-    out = chat.answer_from_kb("total mystery question")
+    out, hits = chat.answer_from_kb("total mystery question")
     assert "know" in out.lower() or "found" in out.lower()  # honest no-answer, no LLM call
+    assert hits == []

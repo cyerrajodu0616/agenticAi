@@ -83,11 +83,16 @@ def extract_resolution(text: str, escalation_question: str) -> str:
     return result.content
 
 
-def answer_from_kb(text: str) -> str:
+def answer_from_kb(text: str) -> tuple[str, list[dict]]:
+    """Returns (answer, hits) -- hits is the ranked list answer_from_kb grounded the
+    answer in, [{source, title, content, similarity}], same shape kb_search returns.
+    Callers that want to persist or show what was retrieved (see assistant/web/app.py's
+    chat_endpoint and assistant/chat_history.py) need this; callers that don't
+    (assistant/chat.py's own run_repl) just ignore the second element."""
     redacted, _ = redact(text)
     hits = kb_search(redacted)
     if not hits:
-        return "I don't have anything in the knowledge base about that yet."
+        return "I don't have anything in the knowledge base about that yet.", []
     context = "\n\n".join(
         f"[{h['source']}:{redact(h['title'])[0]} sim={h['similarity']:.2f}]\n{redact(h['content'])[0]}"
         for h in hits
@@ -105,7 +110,7 @@ def answer_from_kb(text: str) -> str:
             ("human", f"Question:\n{redacted}\n\nKnowledge:\n{context}"),
         ]
     )
-    return result.content
+    return result.content, hits
 
 
 # --- REPL layer -----------------------------------------------------------
@@ -235,7 +240,8 @@ def run_repl(ask_fn=input, say_fn=print) -> None:
         if intent.action == "teach":
             handle_teach(text, ask_fn, say_fn)
         elif intent.action == "ask":
-            say_fn(answer_from_kb(text))
+            answer, _hits = answer_from_kb(text)
+            say_fn(answer)
         elif intent.action == "tasks":
             handle_tasks(say_fn)
         elif intent.action == "resolve":
