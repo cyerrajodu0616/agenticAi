@@ -193,6 +193,28 @@ def test_chat_resolve_extraction_failure_returns_friendly_message(client, monkey
     }
 
 
+def test_chat_ask_save_chat_failure_still_returns_answer(client, monkeypatch):
+    """If persistence (save_chat) fails, the endpoint should still return the correct
+    answer and sources to the user — persistence is a secondary/optional operation that
+    should never hide or replace the primary answer. The user gets their answer, just
+    without a chat_id to correct against later (nothing was persisted, so nothing can
+    be corrected)."""
+    import assistant.web.app as web_app
+
+    def _boom(**kwargs):
+        raise RuntimeError("database connection failed")
+
+    monkeypatch.setattr(web_app, "classify_chat", lambda text: FakeIntent("ask"))
+    hits = [{"source": "agent", "title": "deploy window", "content": "Wed 6pm", "similarity": 0.9}]
+    monkeypatch.setattr(web_app, "answer_from_kb", lambda text: ("the answer, cited", hits))
+    monkeypatch.setattr(web_app, "save_chat", _boom)
+    resp = client.post("/api/chat", json={"text": "when is the deploy window?"})
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "action": "ask", "answer": "the answer, cited", "chat_id": None, "sources": hits,
+    }
+
+
 def test_chat_ask_persists_with_redacted_question(monkeypatch):
     """The stored question must be the redacted text, not the raw user input --
     matching this project's redact-before-persist invariant, enforced at every

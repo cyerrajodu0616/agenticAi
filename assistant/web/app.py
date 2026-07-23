@@ -93,9 +93,13 @@ def chat_endpoint(req: ChatRequest, request: Request) -> dict:
             return {"action": "other", "message": "Sorry, I couldn't understand that — try rephrasing."}
         redacted_question, _ = redact(req.text)
         created_by = "local" if _is_local_request(request) else "peer"
-        chat_id = save_chat(
-            question=redacted_question, answer=answer, sources=hits, created_by=created_by
-        )
+        try:
+            chat_id = save_chat(
+                question=redacted_question, answer=answer, sources=hits, created_by=created_by
+            )
+        except Exception as e:
+            _log.warning("Failed to persist chat history: %s", e)
+            chat_id = None
         return {"action": "ask", "answer": answer, "chat_id": chat_id, "sources": hits}
     if intent.action == "teach":
         try:
