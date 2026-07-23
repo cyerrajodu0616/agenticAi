@@ -75,3 +75,15 @@ CREATE TABLE IF NOT EXISTS review_items (
 ALTER TABLE review_items DROP CONSTRAINT IF EXISTS review_items_kind_check;
 ALTER TABLE review_items ADD CONSTRAINT review_items_kind_check
     CHECK (kind IN ('reply','action','script','kb_entry'));
+
+-- Every "ask" chat interaction: persisted so a wrong answer can be corrected later,
+-- and so the hit list that grounded it doesn't need re-querying (Graphify's data is
+-- live and could differ or become unreachable by the time of a correction).
+CREATE TABLE IF NOT EXISTS chat_history (
+    id BIGSERIAL PRIMARY KEY,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    sources JSONB NOT NULL,
+    created_by TEXT NOT NULL CHECK (created_by IN ('local','peer')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
