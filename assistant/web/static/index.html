@@ -520,7 +520,7 @@ async function sendChat() {
   try {
     const data = await api('POST', '/api/chat', {text});
     if (data.action === 'ask') {
-      logMsg('bot', esc(data.answer) + renderCorrectionUI(data.chat_id, data.sources || []));
+      logMsg('bot', esc(data.answer) + (data.chat_id != null ? renderCorrectionUI(data.chat_id, data.sources || []) : ''));
     } else if (data.action === 'teach') {
       const id = 'proposal-' + Date.now();
       _pendingProposals[id] = {question: data.question, answer: data.answer};
