@@ -13,3 +13,8 @@ wheels/
 # OS / IDE
 .DS_Store
 .idea/
+
+# Excluded pending review (may reference internal/proprietary data)
+output.csv
+langchain/a228_data.txt
+docs/
